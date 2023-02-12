@@ -3,6 +3,7 @@ package afpacket
 import (
 	"encoding/binary"
 	"fmt"
+	"sync"
 
 	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/event"
@@ -19,6 +20,8 @@ type Source struct {
 	buf []byte
 
 	isZeroCopy bool
+
+	sync.Mutex
 }
 
 // NewSource instantiates a new AF_PACKET capture source
@@ -45,6 +48,7 @@ func NewSource(iface link.Link, options ...Option) (*Source, error) {
 		buf:           make([]byte, 65535),
 		socketFD:      sd,
 		ipLayerOffset: iface.LinkType.IpHeaderOffset(),
+		Mutex:         sync.Mutex{},
 	}
 
 	// Apply functional options, if any
@@ -110,6 +114,9 @@ func (s *Source) NextIPPacket() ([]byte, byte, error) {
 
 // Stats returns (and clears) the packet counters of the underlying socket
 func (s *Source) Stats() (capture.Stats, error) {
+	s.Lock()
+	defer s.Unlock()
+
 	ss, err := getSocketStats(s.socketFD)
 	if err != nil {
 		return capture.Stats{}, err

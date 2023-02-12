@@ -3,6 +3,7 @@ package afpacket
 import (
 	"encoding/binary"
 	"fmt"
+	"sync"
 
 	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/event"
@@ -36,6 +37,8 @@ type RingBufSource struct {
 	ipLayerOffset int
 
 	ringBuffer
+
+	sync.Mutex
 }
 
 // NewRingBufSource instantiates a new AF_PACKET capture source making use of a ring buffer
@@ -79,6 +82,7 @@ func NewRingBufSource(iface link.Link, options ...Option) (*RingBufSource, error
 		socketFD:      sd,
 		ipLayerOffset: iface.LinkType.IpHeaderOffset(),
 		eventFD:       eventFD,
+		Mutex:         sync.Mutex{},
 	}
 
 	// Apply functional options, if any
@@ -157,6 +161,9 @@ func (s *RingBufSource) NextIPPacket() ([]byte, byte, error) {
 
 // Stats returns (and clears) the packet counters of the underlying socket
 func (s *RingBufSource) Stats() (capture.Stats, error) {
+	s.Lock()
+	defer s.Unlock()
+
 	ss, err := getSocketStats(s.socketFD)
 	if err != nil {
 		return capture.Stats{}, err
