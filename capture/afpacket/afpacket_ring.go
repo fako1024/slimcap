@@ -65,6 +65,11 @@ func NewRingBufSource(iface link.Link, options ...Option) (*RingBufSource, error
 		return nil, fmt.Errorf("failed to setup AF_PACKET mmap'ed ring buffer %s: %w", iface.Name, err)
 	}
 
+	// Clear socket stats
+	if _, err := getSocketStats(sd); err != nil {
+		return nil, fmt.Errorf("failed to clear AF_PACKET socket stats on %s: %w", iface.Name, err)
+	}
+
 	// Define new source
 	src := &RingBufSource{
 		ringBuffer: ringBuffer{
@@ -148,6 +153,18 @@ func (s *RingBufSource) NextIPPacket() ([]byte, byte, error) {
 		// Skip ahead of the physical layer (if present) and return
 		return pkt[s.ipLayerOffset:], pktType, nil
 	}
+}
+
+// Stats returns (and clears) the packet counters of the underlying socket
+func (s *RingBufSource) Stats() (capture.Stats, error) {
+	ss, err := getSocketStats(s.socketFD)
+	if err != nil {
+		return capture.Stats{}, err
+	}
+	return capture.Stats{
+		PacketsReceived: int(ss.packets),
+		PacketsDropped:  int(ss.drops),
+	}, nil
 }
 
 // Close stops / closes the capture source

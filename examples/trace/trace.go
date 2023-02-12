@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"runtime/pprof"
 	"sort"
 	"strings"
@@ -152,6 +153,10 @@ func (c *Capture) Run() (err error) {
 	})
 	log.Infof("attempting capture on interfaces [%s]", strings.Join(capturing, ","))
 
+	sigExitChan := make(chan os.Signal, 1)
+	signal.Notify(sigExitChan, syscall.SIGTERM, os.Interrupt)
+
+	var listeners []capture.Source
 	// Fork a goroutine for each interface
 	wg := sync.WaitGroup{}
 	for _, iface := range links {
@@ -182,6 +187,7 @@ func (c *Capture) Run() (err error) {
 					log.Errorf("error starting listener (no ring buffer) on `%s`: %s", l.Name, err)
 				}
 			}
+			listeners = append(listeners, listener)
 
 			var nErr int
 			for {
@@ -205,22 +211,23 @@ func (c *Capture) Run() (err error) {
 		}(iface)
 	}
 
+	go func() {
+		// Wait for signal to exit
+		<-sigExitChan
+
+		for _, listener := range listeners {
+			stats, err := listener.Stats()
+			if err != nil {
+				log.Errorf("failed to retrieve socket stats: %s", err)
+			}
+			log.Infof("Packet stats: %#v", stats)
+
+			if err := listener.Close(); err != nil {
+				log.Errorf("failed to gracefully stop capture: %s", err)
+			}
+		}
+	}()
+
 	wg.Wait()
 	return nil
-}
-
-func union(a, b []string) []string {
-	m := make(map[string]bool)
-
-	for _, item := range a {
-		m[strings.ToLower(item)] = true
-	}
-
-	for _, item := range b {
-		if _, ok := m[strings.ToLower(item)]; !ok {
-			a = append(a, strings.ToLower(item))
-		}
-	}
-
-	return a
 }

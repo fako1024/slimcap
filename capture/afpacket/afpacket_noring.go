@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/event"
 	"github.com/fako1024/slimcap/link"
 	"github.com/sirupsen/logrus"
@@ -32,6 +33,11 @@ func NewSource(iface link.Link, options ...Option) (*Source, error) {
 	// Set socket options
 	if err := setSocketOptions(sd, iface); err != nil {
 		return nil, fmt.Errorf("failed to set AF_PACKET socket options on %s: %w", iface.Name, err)
+	}
+
+	// Clear socket stats
+	if _, err := getSocketStats(sd); err != nil {
+		return nil, fmt.Errorf("failed to clear AF_PACKET socket stats on %s: %w", iface.Name, err)
 	}
 
 	// Define new source
@@ -74,7 +80,7 @@ func (s *Source) NextRawPacketPayload() ([]byte, byte, error) {
 	return copyData(s.buf[:n]), byte(pktType), nil
 }
 
-// NextIPPacket polls for the next packet on the wire and returns its
+// NextIPPacket receives the next packet from the wire and returns its
 // IP layer payload (taking into account the underlying interface / link)
 // Packets without a valid IPv4 / IPv6 layer are discarded
 func (s *Source) NextIPPacket() ([]byte, byte, error) {
@@ -100,6 +106,18 @@ func (s *Source) NextIPPacket() ([]byte, byte, error) {
 		// Skip ahead of the physical layer (if present) and return
 		return pkt[s.ipLayerOffset:], pktType, nil
 	}
+}
+
+// Stats returns (and clears) the packet counters of the underlying socket
+func (s *Source) Stats() (capture.Stats, error) {
+	ss, err := getSocketStats(s.socketFD)
+	if err != nil {
+		return capture.Stats{}, err
+	}
+	return capture.Stats{
+		PacketsReceived: int(ss.packets),
+		PacketsDropped:  int(ss.drops),
+	}, nil
 }
 
 // Close stops / closes the capture source

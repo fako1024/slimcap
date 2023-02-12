@@ -31,6 +31,16 @@ func setupSocket(iface link.Link) (event.FileDescriptor, error) {
 	return sd, nil
 }
 
+func getSocketStats(sd event.FileDescriptor) (tPacketStatsV1, error) {
+
+	// Retrieve TPacket stats for the socket
+	ss := tPacketStatsV1{}
+	socklen := unsafe.Sizeof(ss)
+	err := getsockopt(sd, unix.SOL_PACKET, unix.PACKET_STATISTICS, unsafe.Pointer(&ss), uintptr(unsafe.Pointer(&socklen)))
+
+	return ss, err
+}
+
 func setSocketOptions(sd event.FileDescriptor, iface link.Link) error {
 
 	// Set TPacket version on socket to the configured version
@@ -76,6 +86,14 @@ func setupRingBuffer(sd event.FileDescriptor, tPacketReq tPacketRequestV1) ([]by
 	}
 
 	return buf, eventFD, nil
+}
+
+func getsockopt(fd, level, name int, val unsafe.Pointer, vallen uintptr) error {
+	if _, _, errno := unix.Syscall6(unix.SYS_GETSOCKOPT, uintptr(fd), uintptr(level), uintptr(name), uintptr(val), vallen, 0); errno != 0 {
+		return error(errno)
+	}
+
+	return nil
 }
 
 func setsockopt(fd, level, name int, val unsafe.Pointer, vallen uintptr) error {

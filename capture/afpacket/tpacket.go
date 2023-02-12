@@ -87,3 +87,10 @@ func (t tPacketHeaderV1) payloadCopy() []byte {
 	copy(cpPayload, rawPayload)
 	return cpPayload
 }
+
+// tPacketStatsV1 denotes the tpacket_stats structure, c.f.
+// https://github.com/torvalds/linux/blob/master/include/uapi/linux/if_packet.h
+type tPacketStatsV1 struct {
+	packets uint32
+	drops   uint32
+}
