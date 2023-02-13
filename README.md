@@ -1,0 +1,64 @@
+# A lightweight and high-performance network packet capture library
+
+[![Github Release](https://img.shields.io/github/release/fako1024/slimcap.svg)](https://github.com/fako1024/slimcap/releases)
+[![GoDoc](https://godoc.org/github.com/fako1024/slimcap?status.svg)](https://godoc.org/github.com/fako1024/slimcap/)
+[![Go Report Card](https://goreportcard.com/badge/github.com/fako1024/slimcap)](https://goreportcard.com/report/github.com/fako1024/slimcap)
+[![Build/Test Status](https://github.com/fako1024/slimcap/workflows/Go/badge.svg)](https://github.com/fako1024/slimcap/actions?query=workflow%3AGo)
+[![CodeQL](https://github.com/fako1024/slimcap/actions/workflows/codeql.yml/badge.svg)](https://github.com/fako1024/slimcap/actions/workflows/codeql.yml)
+
+This package provides a simple interface to network packet capture / sniffing. It is focused on high performance and does *not* perform any payload / network layer decoding.
+
+**Note:** This is currently considered WIP. The interface and / or features are not stable and can change at any point in time !
+
+## Features
+- Support for network packet capture via AF_PACKET (Linux) directly from network socket or via ring buffer
+- Minimal memory and CPU usage footprint, support for zero-copy operations
+
+## Installation
+```bash
+go get -u github.com/fako1024/slimcap
+```
+
+## Examples
+#### Perform simple capture of a few packets on a network interface (c.f. `examples/dump`)
+```go
+package main
+
+import (
+	"log"
+
+	"github.com/fako1024/slimcap/capture/afpacket"
+	"github.com/fako1024/slimcap/link"
+)
+
+func main() {
+
+	var (
+		devName = "eth0"
+		maxPkts = 10
+	)
+
+	link, err := link.New(devName)
+	if err != nil {
+		log.Fatalf("failed to set up link `%s`: %s", devName, err)
+	}
+
+	listener, err := afpacket.NewRingBufSource(link, afpacket.ZeroCopy(true))
+	if err != nil {
+		log.Fatalf("failed to start listener or `%s`: %s", devName, err)
+	}
+	defer func() {
+		if err := listener.Close(); err != nil {
+			log.Fatalf("failed to close listener or `%s`: %s", devName, err)
+		}
+	}()
+
+	for i := 0; i < maxPkts; i++ {
+		payload, pktType, err := listener.NextIPPacket()
+		if err != nil {
+			log.Fatalf("error during capture on `%s`: %s", devName, err)
+		}
+		log.Printf("Received packet with IP layer on `%s`: %v (inbound: %v)", devName, payload, pktType == 0)
+	}
+}
+```
