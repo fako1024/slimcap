@@ -2,10 +2,14 @@ package afpacket
 
 import (
 	"encoding/binary"
-	"fmt"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
+)
+
+const (
+	tPacketAlignment   = uint(unix.TPACKET_ALIGNMENT)
+	tPacketHeaderV1Len = 31
 )
 
 const (
@@ -15,9 +19,8 @@ const (
 )
 
 var (
-	tPacketDefaultFrameSize = 8192
-	tPacketDefaultNBlocks   = 32
-	tPacketDefaultBlockNr   = 1
+	pageSizeAlignment     = uint(unix.Getpagesize())
+	tPacketDefaultBlockNr = 1
 )
 
 // tPacketRequestV1 denotes the tpacket_req structure, c.f.
@@ -29,15 +32,19 @@ type tPacketRequestV1 struct {
 	frameNr   uint32
 }
 
+func newTPacketRequestV1ForBuffer(bufSize, snapLen int) (req tPacketRequestV1, err error) {
+
+	// Ensure the parameters are in alignment with the TPacket header length requirements
+	frameSize := tPacketAlign(tPacketHeaderV1Len + snapLen)
+	nBlocks := tPacketAlign(bufSize / frameSize)
+
+	return newTPacketRequestV1(frameSize, nBlocks, tPacketDefaultBlockNr)
+}
+
 func newTPacketRequestV1(frameSize, nBlocks, blockNr int) (req tPacketRequestV1, err error) {
 
 	// Ensure the parameters are in alignment with the page size
-	blockSize := frameSize * nBlocks
-	if pageSize := unix.Getpagesize(); blockSize%pageSize != 0 {
-		err = fmt.Errorf("TPacket block size (%d) is not page size aligned (page size: %d)", blockSize, pageSize)
-		return
-	}
-
+	blockSize := pageSizeAlign(frameSize * nBlocks)
 	req = tPacketRequestV1{
 		blockSize: uint32(blockSize),
 		blockNr:   uint32(blockNr),
@@ -93,4 +100,12 @@ func (t tPacketHeaderV1) payloadCopy() []byte {
 type tPacketStatsV1 struct {
 	packets uint32
 	drops   uint32
+}
+
+func tPacketAlign(x int) int {
+	return int((uint(x) + tPacketAlignment - 1) &^ (tPacketAlignment - 1))
+}
+
+func pageSizeAlign(x int) int {
+	return int((uint(x) + pageSizeAlignment - 1) &^ (pageSizeAlignment - 1))
 }

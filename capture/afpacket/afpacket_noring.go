@@ -14,12 +14,13 @@ import (
 
 // Source denotes a plain AF_PACKET capture source
 type Source struct {
-	socketFD      event.FileDescriptor
+	socketFD event.FileDescriptor
+
 	ipLayerOffset int
+	snapLen       int
+	isPromisc     bool
 
 	buf []byte
-
-	isZeroCopy bool
 
 	sync.Mutex
 }
@@ -33,19 +34,9 @@ func NewSource(iface link.Link, options ...Option) (*Source, error) {
 		return nil, fmt.Errorf("failed to setup AF_PACKET socket on %s: %w", iface.Name, err)
 	}
 
-	// Set socket options
-	if err := setSocketOptions(sd, iface); err != nil {
-		return nil, fmt.Errorf("failed to set AF_PACKET socket options on %s: %w", iface.Name, err)
-	}
-
-	// Clear socket stats
-	if _, err := getSocketStats(sd); err != nil {
-		return nil, fmt.Errorf("failed to clear AF_PACKET socket stats on %s: %w", iface.Name, err)
-	}
-
 	// Define new source
 	src := &Source{
-		buf:           make([]byte, 65535),
+		snapLen:       defaultSnapLen,
 		socketFD:      sd,
 		ipLayerOffset: iface.LinkType.IpHeaderOffset(),
 		Mutex:         sync.Mutex{},
@@ -53,7 +44,20 @@ func NewSource(iface link.Link, options ...Option) (*Source, error) {
 
 	// Apply functional options, if any
 	for _, opt := range options {
-		opt(src)
+		if err := opt(src); err != nil {
+			return nil, fmt.Errorf("failed to set option: %w", err)
+		}
+	}
+	src.buf = make([]byte, src.snapLen)
+
+	// Set socket options
+	if err := setSocketOptions(sd, iface, src.snapLen, src.isPromisc); err != nil {
+		return nil, fmt.Errorf("failed to set AF_PACKET socket options on %s: %w", iface.Name, err)
+	}
+
+	// Clear socket stats
+	if _, err := getSocketStats(sd); err != nil {
+		return nil, fmt.Errorf("failed to clear AF_PACKET socket stats on %s: %w", iface.Name, err)
 	}
 
 	return src, nil
@@ -78,9 +82,6 @@ func (s *Source) NextRawPacketPayload() ([]byte, byte, error) {
 	}
 
 	// Return the raw data, depending on the zero-copy status
-	if s.isZeroCopy {
-		return s.buf[:n], byte(pktType), nil
-	}
 	return copyData(s.buf[:n]), byte(pktType), nil
 }
 
@@ -110,6 +111,28 @@ func (s *Source) NextIPPacket() ([]byte, byte, error) {
 		// Skip ahead of the physical layer (if present) and return
 		return pkt[s.ipLayerOffset:], pktType, nil
 	}
+}
+
+// NextIPPacketFn executed the provided function on the next packet received
+// on the wire
+func (s *Source) NextIPPacketFn(fn func(payload []byte, pktType byte) error) error {
+
+	// Receive a packet from the write
+	n, sockAddr, err := unix.Recvfrom(s.socketFD, s.buf, 0)
+	if err != nil {
+		return fmt.Errorf("error receiving next packet from socket: %w", err)
+	}
+
+	// Determine the packet type (direction)
+	var pktType uint8
+	if llsa, ok := sockAddr.(*unix.SockaddrLinklayer); ok {
+		pktType = llsa.Pkttype
+	} else {
+		return fmt.Errorf("failed to determine packet type")
+	}
+
+	// Execute the provided function before making the buffer available for writing again
+	return fn(s.buf[s.ipLayerOffset:n], pktType)
 }
 
 // Stats returns (and clears) the packet counters of the underlying socket

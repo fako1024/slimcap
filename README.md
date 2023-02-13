@@ -43,7 +43,11 @@ func main() {
 		log.Fatalf("failed to set up link `%s`: %s", devName, err)
 	}
 
-	listener, err := afpacket.NewRingBufSource(link, afpacket.ZeroCopy(true))
+	listener, err := afpacket.NewRingBufSource(link,
+		afpacket.CaptureLength(64),
+		afpacket.BufferSize(1*1024*1024),
+		afpacket.Promiscuous(false),
+	)
 	if err != nil {
 		log.Fatalf("failed to start listener or `%s`: %s", devName, err)
 	}
@@ -54,11 +58,12 @@ func main() {
 	}()
 
 	for i := 0; i < maxPkts; i++ {
-		payload, pktType, err := listener.NextIPPacket()
-		if err != nil {
+		if err := listener.NextIPPacketFn(func(payload []byte, pktType byte) error {
+			log.Printf("Received packet with IP layer on `%s`: %v (inbound: %v)", devName, payload, pktType == 0)
+			return nil
+		}); err != nil {
 			log.Fatalf("error during capture on `%s`: %s", devName, err)
 		}
-		log.Printf("Received packet with IP layer on `%s`: %v (inbound: %v)", devName, payload, pktType == 0)
 	}
 }
 ```

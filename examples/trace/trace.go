@@ -177,12 +177,12 @@ func (c *Capture) Run() (err error) {
 
 			var listener capture.Source
 			if c.useRingBuffer {
-				listener, err = afpacket.NewRingBufSource(l, afpacket.ZeroCopy(true))
+				listener, err = afpacket.NewRingBufSource(l)
 				if err != nil {
 					log.Errorf("error starting listener (with ring buffer) on `%s`: %s", l.Name, err)
 				}
 			} else {
-				listener, err = afpacket.NewSource(l, afpacket.ZeroCopy(true))
+				listener, err = afpacket.NewSource(l)
 				if err != nil {
 					log.Errorf("error starting listener (no ring buffer) on `%s`: %s", l.Name, err)
 				}
@@ -190,21 +190,41 @@ func (c *Capture) Run() (err error) {
 			listeners = append(listeners, listener)
 
 			var nErr int
-			for {
-				pkt, pktType, err := listener.NextIPPacket()
-				if err != nil {
-					if errors.Is(err, capture.ErrCaptureStopped) {
-						log.Infof("gracefully stopped capture on `%s`", l.Name)
-						return
-					}
-					nErr++
-					if nErr >= c.maxIfaceErrors {
-						log.Errorf("too many errors (%d) on `%s`, stopping capture", nErr, l.Name)
+			if c.useZeroCopy {
+				for {
+					if err := listener.NextIPPacketFn(func(payload []byte, pktType byte) error {
+						if c.logPacketPayload {
+							log.Infof("[%s] Got %v / %d", l.Name, payload[:16], pktType)
+						}
+						return nil
+					}); err != nil {
+						if errors.Is(err, capture.ErrCaptureStopped) {
+							log.Infof("gracefully stopped capture on `%s`", l.Name)
+							return
+						}
+						nErr++
+						if nErr >= c.maxIfaceErrors {
+							log.Errorf("too many errors (%d) on `%s`, stopping capture", nErr, l.Name)
+						}
 					}
 				}
+			} else {
+				for {
+					pkt, pktType, err := listener.NextIPPacket()
+					if err != nil {
+						if errors.Is(err, capture.ErrCaptureStopped) {
+							log.Infof("gracefully stopped capture on `%s`", l.Name)
+							return
+						}
+						nErr++
+						if nErr >= c.maxIfaceErrors {
+							log.Errorf("too many errors (%d) on `%s`, stopping capture", nErr, l.Name)
+						}
+					}
 
-				if c.logPacketPayload {
-					log.Infof("[%s] Got %v / %d", l.Name, pkt[:16], pktType)
+					if c.logPacketPayload {
+						log.Infof("[%s] Got %v / %d", l.Name, pkt[:16], pktType)
+					}
 				}
 			}
 

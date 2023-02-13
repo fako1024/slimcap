@@ -12,6 +12,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const (
+	defaultSnapLen = 262144
+	defaultBufSize = 4096000
+)
+
 func setupSocket(iface link.Link) (event.FileDescriptor, error) {
 
 	// Setup socket
@@ -35,23 +40,35 @@ func getSocketStats(sd event.FileDescriptor) (tPacketStatsV1, error) {
 
 	// Retrieve TPacket stats for the socket
 	ss := tPacketStatsV1{}
-	socklen := unsafe.Sizeof(ss)
-	err := getsockopt(sd, unix.SOL_PACKET, unix.PACKET_STATISTICS, unsafe.Pointer(&ss), uintptr(unsafe.Pointer(&socklen)))
+	sockLen := unsafe.Sizeof(ss)
+	err := getsockopt(sd, unix.SOL_PACKET, unix.PACKET_STATISTICS, unsafe.Pointer(&ss), uintptr(unsafe.Pointer(&sockLen)))
 
 	return ss, err
 }
 
-func setSocketOptions(sd event.FileDescriptor, iface link.Link) error {
+func setSocketOptions(sd event.FileDescriptor, iface link.Link, snapLen int, promisc bool) error {
 
 	// Set TPacket version on socket to the configured version
 	if err := unix.SetsockoptInt(sd, unix.SOL_PACKET, unix.PACKET_VERSION, tPacketVersion); err != nil {
 		return fmt.Errorf("failed to set TPacket version: %w", err)
 	}
 
-	// Set baseline BPF filters to select only packets with a valid IP header
+	// If the source is in promiscuous mode, set the required flag
+	if promisc {
+		mReq := unix.PacketMreq{
+			Ifindex: int32(iface.Index),
+			Type:    unix.PACKET_MR_PROMISC,
+		}
+		reqLen := unsafe.Sizeof(mReq)
+		if err := setsockopt(sd, unix.SOL_SOCKET, unix.PACKET_ADD_MEMBERSHIP, unsafe.Pointer(&mReq), uintptr(unsafe.Pointer(&reqLen))); err != nil {
+			return fmt.Errorf("failed to set promiscuous filter: %w", err)
+		}
+	}
+
+	// Set baseline BPF filters to select only packets with a valid IP header and set the correct snaplen
 	var (
 		p               unix.SockFprog
-		bfpInstructions = iface.LinkType.BPFFilter()
+		bfpInstructions = iface.LinkType.BPFFilter()(snapLen)
 	)
 	p.Len = uint16(len(bfpInstructions))
 	p.Filter = (*unix.SockFilter)(unsafe.Pointer(&bfpInstructions[0]))

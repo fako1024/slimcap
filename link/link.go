@@ -37,7 +37,7 @@ func (l LinkType) IpHeaderOffset() int {
 }
 
 // BPFFilter returns the link / interface specific raw BPF instructions to filter for valid packets only
-func (l LinkType) BPFFilter() []bpf.RawInstruction {
+func (l LinkType) BPFFilter() func(snapLen int) []bpf.RawInstruction {
 	switch l {
 	case 1, // ARPHRD_ETHER
 		772: // ARPHRD_LOOPBACK
