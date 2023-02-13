@@ -192,7 +192,7 @@ func (c *Capture) Run() (err error) {
 			var nErr int
 			if c.useZeroCopy {
 				for {
-					if err := listener.NextIPPacketFn(func(payload []byte, pktType byte) error {
+					if err := listener.NextIPPacketFn(func(payload []byte, pktType capture.PacketType, ipLayerOffset int) error {
 						if c.logPacketPayload {
 							log.Infof("[%s] Got %v / %d", l.Name, payload[:16], pktType)
 						}

@@ -63,13 +63,16 @@ func (t tPacketRequestV1) blockSizeNr() int {
 // https://github.com/torvalds/linux/blob/master/include/uapi/linux/if_packet.h
 type tPacketHeaderV1 []byte
 
-// TODO: Unsure if the getStatus / setStatus have to be atomic
 func (t tPacketHeaderV1) getStatus() uint32 {
 	return *(*uint32)(unsafe.Pointer(&t[0]))
 }
 
 func (t tPacketHeaderV1) setStatus(status uint32) {
 	*(*uint32)(unsafe.Pointer(&t[0])) = status
+}
+
+func (t tPacketHeaderV1) pktLen() uint32 {
+	return binary.LittleEndian.Uint32(t[8:12])
 }
 
 func (t tPacketHeaderV1) snapLen() uint32 {

@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 
+	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/capture/afpacket"
 	"github.com/fako1024/slimcap/link"
 )
@@ -34,7 +35,7 @@ func main() {
 	}()
 
 	for i := 0; i < maxPkts; i++ {
-		if err := listener.NextIPPacketFn(func(payload []byte, pktType byte) error {
+		if err := listener.NextIPPacketFn(func(payload []byte, pktType capture.PacketType, ipLayerOffset int) error {
 			log.Printf("Received packet with IP layer on `%s`: %v (inbound: %v)", devName, payload, pktType == 0)
 			return nil
 		}); err != nil {

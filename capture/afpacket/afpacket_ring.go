@@ -36,6 +36,7 @@ type RingBufSource struct {
 	snapLen       int
 	bufSize       int
 	isPromisc     bool
+	link          link.Link
 
 	ringBuffer
 
@@ -50,6 +51,7 @@ func NewRingBufSource(iface link.Link, options ...Option) (*RingBufSource, error
 		snapLen:       defaultSnapLen,
 		bufSize:       defaultBufSize,
 		ipLayerOffset: iface.LinkType.IpHeaderOffset(),
+		link:          iface,
 		Mutex:         sync.Mutex{},
 	}
 
@@ -93,7 +95,7 @@ func NewRingBufSource(iface link.Link, options ...Option) (*RingBufSource, error
 
 // NextRawPacketPayload polls for the next packet on the wire and returns its
 // raw payload along with the packet type flag (including all layers)
-func (s *RingBufSource) NextRawPacketPayload() ([]byte, byte, error) {
+func (s *RingBufSource) NextRawPacketPayload() ([]byte, capture.PacketType, error) {
 
 	tp := s.nextTPacketHeader()
 	for tp.getStatus()&unix.TP_STATUS_USER == 0 {
@@ -128,7 +130,7 @@ func (s *RingBufSource) NextRawPacketPayload() ([]byte, byte, error) {
 // NextIPPacket polls for the next packet on the wire and returns its
 // IP layer payload (taking into account the underlying interface / link)
 // Packets without a valid IPv4 / IPv6 layer are discarded
-func (s *RingBufSource) NextIPPacket() ([]byte, byte, error) {
+func (s *RingBufSource) NextIPPacket() ([]byte, capture.PacketType, error) {
 	for {
 		pkt, pktType, err := s.NextRawPacketPayload()
 		if err != nil {
@@ -155,7 +157,7 @@ func (s *RingBufSource) NextIPPacket() ([]byte, byte, error) {
 
 // NextIPPacketFn executed the provided function on the next packet received
 // on the wire
-func (s *RingBufSource) NextIPPacketFn(fn func(payload []byte, pktType byte) error) error {
+func (s *RingBufSource) NextIPPacketFn(fn func(payload []byte, pktType capture.PacketType, ipLayerOffset int) error) error {
 
 	tp := s.nextTPacketHeader()
 	for tp.getStatus()&unix.TP_STATUS_USER == 0 {
@@ -181,7 +183,7 @@ func (s *RingBufSource) NextIPPacketFn(fn func(payload []byte, pktType byte) err
 	}
 
 	// Execute the provided function before returning the frame to the kernel
-	if err := fn(tp.payloadNoCopy()[s.ipLayerOffset:], tp.packetType()); err != nil {
+	if err := fn(tp.payloadNoCopy()[s.ipLayerOffset:], tp.packetType(), s.ipLayerOffset); err != nil {
 		return err
 	}
 
@@ -221,4 +223,9 @@ func (s *RingBufSource) Close() error {
 	s.ring = nil
 
 	return unix.Close(s.socketFD)
+}
+
+// Link returns the underlying link
+func (s *RingBufSource) Link() link.Link {
+	return s.link
 }

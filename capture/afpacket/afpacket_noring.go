@@ -19,6 +19,7 @@ type Source struct {
 	ipLayerOffset int
 	snapLen       int
 	isPromisc     bool
+	link          link.Link
 
 	buf []byte
 
@@ -39,6 +40,7 @@ func NewSource(iface link.Link, options ...Option) (*Source, error) {
 		snapLen:       defaultSnapLen,
 		socketFD:      sd,
 		ipLayerOffset: iface.LinkType.IpHeaderOffset(),
+		link:          iface,
 		Mutex:         sync.Mutex{},
 	}
 
@@ -65,7 +67,7 @@ func NewSource(iface link.Link, options ...Option) (*Source, error) {
 
 // NextRawPacketPayload receives the next packet from the wire and returns its
 // raw payload along with the packet type flag (including all layers)
-func (s *Source) NextRawPacketPayload() ([]byte, byte, error) {
+func (s *Source) NextRawPacketPayload() ([]byte, capture.PacketType, error) {
 
 	// Receive a packet from the write
 	n, sockAddr, err := unix.Recvfrom(s.socketFD, s.buf, 0)
@@ -88,7 +90,7 @@ func (s *Source) NextRawPacketPayload() ([]byte, byte, error) {
 // NextIPPacket receives the next packet from the wire and returns its
 // IP layer payload (taking into account the underlying interface / link)
 // Packets without a valid IPv4 / IPv6 layer are discarded
-func (s *Source) NextIPPacket() ([]byte, byte, error) {
+func (s *Source) NextIPPacket() ([]byte, capture.PacketType, error) {
 	for {
 		pkt, pktType, err := s.NextRawPacketPayload()
 		if err != nil {
@@ -115,7 +117,7 @@ func (s *Source) NextIPPacket() ([]byte, byte, error) {
 
 // NextIPPacketFn executed the provided function on the next packet received
 // on the wire
-func (s *Source) NextIPPacketFn(fn func(payload []byte, pktType byte) error) error {
+func (s *Source) NextIPPacketFn(fn func(payload []byte, pktType byte, ipLayerOffset int) error) error {
 
 	// Receive a packet from the write
 	n, sockAddr, err := unix.Recvfrom(s.socketFD, s.buf, 0)
@@ -132,7 +134,7 @@ func (s *Source) NextIPPacketFn(fn func(payload []byte, pktType byte) error) err
 	}
 
 	// Execute the provided function before making the buffer available for writing again
-	return fn(s.buf[s.ipLayerOffset:n], pktType)
+	return fn(s.buf[s.ipLayerOffset:n], pktType, s.ipLayerOffset)
 }
 
 // Stats returns (and clears) the packet counters of the underlying socket
@@ -153,6 +155,11 @@ func (s *Source) Stats() (capture.Stats, error) {
 // Close stops / closes the capture source
 func (s *Source) Close() error {
 	return unix.Close(s.socketFD)
+}
+
+// Link returns the underlying link
+func (s *Source) Link() link.Link {
+	return s.link
 }
 
 func copyData(buf []byte) []byte {
