@@ -4,18 +4,53 @@
 package afpacket
 
 import (
+	"encoding/binary"
 	"fmt"
 	"unsafe"
 
+	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/event"
 	"github.com/fako1024/slimcap/link"
 	"golang.org/x/sys/unix"
 )
 
 const (
-	defaultSnapLen = 262144
+	DefaultSnapLen = 262144
 	defaultBufSize = 4096000
 )
+
+// Packet denotes a packet retrieved via the AF_PACKET ring buffer,
+// [Fulfils the capture.Packet interface]
+// [0:1] - Packet Type
+// [1:2] - IP Layer Offset
+// [2:6] - Total packet length
+type Packet []byte
+
+// TotalLen returnsthe total packet length, including all headers
+func (p *Packet) TotalLen() uint32 {
+	return binary.LittleEndian.Uint32((*p)[2:6])
+}
+
+// Len returns the actual data length of the packet payload as consumed from the wire
+// (may be truncated due to)
+func (p *Packet) Len() int {
+	return len((*p)[6:])
+}
+
+// Payload returns the raw payload / network layers of the packet
+func (p *Packet) Payload() []byte {
+	return (*p)[6:]
+}
+
+// IIPLayer returns the IP layer of the packet (up to snaplen, if set)
+func (p *Packet) IPLayer() []byte {
+	return (*p)[(*p)[1]:]
+}
+
+// Type denotes the packet type (i.e. the packet direction w.r.t. the interface)
+func (p *Packet) Type() capture.PacketType {
+	return (*p)[0]
+}
 
 func setupSocket(iface link.Link) (event.FileDescriptor, error) {
 

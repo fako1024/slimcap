@@ -3,12 +3,12 @@ package afpacket
 import (
 	"encoding/binary"
 	"fmt"
+	"reflect"
 	"sync"
 
 	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/event"
 	"github.com/fako1024/slimcap/link"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 )
 
@@ -16,12 +16,12 @@ import (
 type Source struct {
 	socketFD event.FileDescriptor
 
-	ipLayerOffset int
+	ipLayerOffset byte
 	snapLen       int
 	isPromisc     bool
 	link          link.Link
 
-	buf []byte
+	buf Packet
 
 	sync.Mutex
 }
@@ -37,7 +37,7 @@ func NewSource(iface link.Link, options ...Option) (*Source, error) {
 
 	// Define new source
 	src := &Source{
-		snapLen:       defaultSnapLen,
+		snapLen:       DefaultSnapLen,
 		socketFD:      sd,
 		ipLayerOffset: iface.LinkType.IpHeaderOffset(),
 		link:          iface,
@@ -50,7 +50,7 @@ func NewSource(iface link.Link, options ...Option) (*Source, error) {
 			return nil, fmt.Errorf("failed to set option: %w", err)
 		}
 	}
-	src.buf = make([]byte, src.snapLen)
+	src.buf = make(Packet, src.snapLen)
 
 	// Set socket options
 	if err := setSocketOptions(sd, iface, src.snapLen, src.isPromisc); err != nil {
@@ -65,59 +65,33 @@ func NewSource(iface link.Link, options ...Option) (*Source, error) {
 	return src, nil
 }
 
-// NextRawPacketPayload receives the next packet from the wire and returns its
-// raw payload along with the packet type flag (including all layers)
-func (s *Source) NextRawPacketPayload() ([]byte, capture.PacketType, error) {
+func (s *Source) NextPacket() (capture.Packet, error) {
 
-	// Receive a packet from the write
-	n, sockAddr, err := unix.Recvfrom(s.socketFD, s.buf, 0)
+	n, err := s.nextPacketInto(&s.buf)
 	if err != nil {
-		return nil, 0, fmt.Errorf("error receiving next packet from socket: %w", err)
+		return nil, err
 	}
 
-	// Determine the packet type (direction)
-	var pktType uint8
-	if llsa, ok := sockAddr.(*unix.SockaddrLinklayer); ok {
-		pktType = llsa.Pkttype
-	} else {
-		return nil, 0, fmt.Errorf("failed to determine packet type")
-	}
-
-	// Return the raw data, depending on the zero-copy status
-	return copyData(s.buf[:n]), byte(pktType), nil
+	return copyData((s.buf)[:n+6]), nil
 }
 
-// NextIPPacket receives the next packet from the wire and returns its
-// IP layer payload (taking into account the underlying interface / link)
-// Packets without a valid IPv4 / IPv6 layer are discarded
-func (s *Source) NextIPPacket() ([]byte, capture.PacketType, error) {
-	for {
-		pkt, pktType, err := s.NextRawPacketPayload()
-		if err != nil {
-			return nil, 0, err
-		}
+func (s *Source) NextPacketInto(p capture.Packet) error {
 
-		if len(pkt) < link.IPLayerOffsetEthernet {
-			return nil, 0, fmt.Errorf("received packet of length %d too short", len(pkt))
-		}
-
-		// TODO: Remove block once we have confirmed the BPF Filtering is working
-		// If this is supposed to be a physical / ethernet type link, validate it
-		if s.ipLayerOffset == link.IPLayerOffsetEthernet {
-			if !link.EtherType(binary.BigEndian.Uint16(pkt[12:14])).HasValidIPLayer() {
-				logrus.StandardLogger().Warnf("Detected unexpected packet with invalid IP layer")
-				continue
-			}
-		}
-
-		// Skip ahead of the physical layer (if present) and return
-		return pkt[s.ipLayerOffset:], pktType, nil
+	data, ok := p.(*Packet)
+	if !ok {
+		return fmt.Errorf("incompatible packet type `%s` for Source", reflect.TypeOf(p).String())
 	}
+
+	n, err := s.nextPacketInto(data)
+	if err != nil {
+		return err
+	}
+
+	(*data) = (*data)[:n+6]
+	return nil
 }
 
-// NextIPPacketFn executed the provided function on the next packet received
-// on the wire
-func (s *Source) NextIPPacketFn(fn func(payload []byte, pktType byte, ipLayerOffset int) error) error {
+func (s *Source) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType capture.PacketType, ipLayerOffset byte) error) error {
 
 	// Receive a packet from the write
 	n, sockAddr, err := unix.Recvfrom(s.socketFD, s.buf, 0)
@@ -133,8 +107,7 @@ func (s *Source) NextIPPacketFn(fn func(payload []byte, pktType byte, ipLayerOff
 		return fmt.Errorf("failed to determine packet type")
 	}
 
-	// Execute the provided function before making the buffer available for writing again
-	return fn(s.buf[s.ipLayerOffset:n], pktType, s.ipLayerOffset)
+	return fn(s.buf[:n], 0, pktType, s.ipLayerOffset) // TODO: How do we get the total packet size from a plain socket?
 }
 
 // Stats returns (and clears) the packet counters of the underlying socket
@@ -162,8 +135,29 @@ func (s *Source) Link() link.Link {
 	return s.link
 }
 
-func copyData(buf []byte) []byte {
-	cpBuf := make([]byte, len(buf))
+func (s *Source) nextPacketInto(data *Packet) (int, error) {
+
+	// Receive a packet from the write
+	n, sockAddr, err := unix.Recvfrom(s.socketFD, (*data)[6:], 0)
+	if err != nil {
+		return -1, fmt.Errorf("error receiving next packet from socket: %w", err)
+	}
+
+	// Determine the packet type (direction)
+	if llsa, ok := sockAddr.(*unix.SockaddrLinklayer); ok {
+		(*data)[0] = llsa.Pkttype
+	} else {
+		return -1, fmt.Errorf("failed to determine packet type")
+	}
+
+	(*data)[1] = byte(s.ipLayerOffset)
+	binary.LittleEndian.PutUint32((*data)[2:6], 0) // TODO: How do we get the total packet size from a plain socket?
+
+	return n, nil
+}
+
+func copyData(buf []byte) *Packet {
+	cpBuf := make(Packet, len(buf))
 	copy(cpBuf, buf)
-	return cpBuf
+	return &cpBuf
 }

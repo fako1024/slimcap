@@ -3,12 +3,12 @@ package afpacket
 import (
 	"encoding/binary"
 	"fmt"
+	"reflect"
 	"sync"
 
 	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/event"
 	"github.com/fako1024/slimcap/link"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 )
 
@@ -32,7 +32,7 @@ type RingBufSource struct {
 	socketFD event.FileDescriptor
 	eventFD  event.EvtFileDescriptor
 
-	ipLayerOffset int
+	ipLayerOffset byte
 	snapLen       int
 	bufSize       int
 	isPromisc     bool
@@ -48,7 +48,7 @@ func NewRingBufSource(iface link.Link, options ...Option) (*RingBufSource, error
 
 	// Define new source
 	src := &RingBufSource{
-		snapLen:       defaultSnapLen,
+		snapLen:       DefaultSnapLen,
 		bufSize:       defaultBufSize,
 		ipLayerOffset: iface.LinkType.IpHeaderOffset(),
 		link:          iface,
@@ -93,104 +93,62 @@ func NewRingBufSource(iface link.Link, options ...Option) (*RingBufSource, error
 	return src, nil
 }
 
-// NextRawPacketPayload polls for the next packet on the wire and returns its
-// raw payload along with the packet type flag (including all layers)
-func (s *RingBufSource) NextRawPacketPayload() ([]byte, capture.PacketType, error) {
+func (s *RingBufSource) NextPacket() (capture.Packet, error) {
 
-	tp := s.nextTPacketHeader()
-	for tp.getStatus()&unix.TP_STATUS_USER == 0 {
-
-		wasCancelled, errno := event.Poll(s.eventFD, s.socketFD, unix.POLLIN|unix.POLLERR)
-		if errno != 0 {
-			if errno == unix.EINTR {
-				continue
-			}
-			return nil, 0, fmt.Errorf("error polling for next packet: %d", errno)
-		}
-		if wasCancelled {
-			return nil, 0, capture.ErrCaptureStopped
-		}
-
-		if tp.getStatus()&tPacketStatusCopy != 0 {
-			tp.setStatus(tPacketStatusKernel)
-			s.offset = (s.offset + 1) % int(s.tpReq.frameNr)
-			tp = s.nextTPacketHeader()
-
-			continue
-		}
+	tp, err := s.nextPacket()
+	if err != nil {
+		return nil, err
 	}
+	defer func() {
+		tp.setStatus(tPacketStatusKernel)
+		s.offset = (s.offset + 1) % int(s.tpReq.frameNr)
+	}()
 
-	tp.setStatus(tPacketStatusKernel)
-	s.offset = (s.offset + 1) % int(s.tpReq.frameNr)
+	data := make(Packet, 6+tp.snapLen())
+	data[0] = tp.packetType()
+	data[1] = byte(s.ipLayerOffset)
+	binary.LittleEndian.PutUint32(data[2:6], tp.pktLen())
+	copy(data[6:], tp.payloadNoCopy())
 
-	// Return a copy of the raw data
-	return tp.payloadCopy(), tp.packetType(), nil
+	return &data, nil
 }
 
-// NextIPPacket polls for the next packet on the wire and returns its
-// IP layer payload (taking into account the underlying interface / link)
-// Packets without a valid IPv4 / IPv6 layer are discarded
-func (s *RingBufSource) NextIPPacket() ([]byte, capture.PacketType, error) {
-	for {
-		pkt, pktType, err := s.NextRawPacketPayload()
-		if err != nil {
-			return nil, 0, err
-		}
+func (s *RingBufSource) NextPacketInto(p capture.Packet) error {
 
-		if len(pkt) < link.IPLayerOffsetEthernet {
-			return nil, 0, fmt.Errorf("received packet of length %d too short", len(pkt))
-		}
-
-		// TODO: Remove block once we have confirmed the BPF Filtering is working
-		// If this is supposed to be a physical / ethernet type link, validate it
-		if s.ipLayerOffset == link.IPLayerOffsetEthernet {
-			if !link.EtherType(binary.BigEndian.Uint16(pkt[12:14])).HasValidIPLayer() {
-				logrus.StandardLogger().Warnf("Detected unexpected packet with invalid IP layer")
-				continue
-			}
-		}
-
-		// Skip ahead of the physical layer (if present) and return
-		return pkt[s.ipLayerOffset:], pktType, nil
-	}
-}
-
-// NextIPPacketFn executed the provided function on the next packet received
-// on the wire
-func (s *RingBufSource) NextIPPacketFn(fn func(payload []byte, pktType capture.PacketType, ipLayerOffset int) error) error {
-
-	tp := s.nextTPacketHeader()
-	for tp.getStatus()&unix.TP_STATUS_USER == 0 {
-
-		wasCancelled, errno := event.Poll(s.eventFD, s.socketFD, unix.POLLIN|unix.POLLERR)
-		if errno != 0 {
-			if errno == unix.EINTR {
-				continue
-			}
-			return fmt.Errorf("error polling for next packet: %d", errno)
-		}
-		if wasCancelled {
-			return capture.ErrCaptureStopped
-		}
-
-		if tp.getStatus()&tPacketStatusCopy != 0 {
-			tp.setStatus(tPacketStatusKernel)
-			s.offset = (s.offset + 1) % int(s.tpReq.frameNr)
-			tp = s.nextTPacketHeader()
-
-			continue
-		}
-	}
-
-	// Execute the provided function before returning the frame to the kernel
-	if err := fn(tp.payloadNoCopy()[s.ipLayerOffset:], tp.packetType(), s.ipLayerOffset); err != nil {
+	tp, err := s.nextPacket()
+	if err != nil {
 		return err
 	}
+	defer func() {
+		tp.setStatus(tPacketStatusKernel)
+		s.offset = (s.offset + 1) % int(s.tpReq.frameNr)
+	}()
 
-	tp.setStatus(tPacketStatusKernel)
-	s.offset = (s.offset + 1) % int(s.tpReq.frameNr)
+	if data, ok := p.(*Packet); ok {
+		(*data)[0] = tp.packetType()
+		(*data)[1] = byte(s.ipLayerOffset)
+		binary.LittleEndian.PutUint32((*data)[2:6], tp.pktLen())
+		copy((*data)[6:], tp.payloadNoCopy())
+		*data = (*data)[:6+tp.snapLen()]
+	} else {
+		return fmt.Errorf("incompatible packet type `%s` for RingBufSource", reflect.TypeOf(p).String())
+	}
 
 	return nil
+}
+
+func (s *RingBufSource) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType capture.PacketType, ipLayerOffset byte) error) error {
+
+	tp, err := s.nextPacket()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		tp.setStatus(tPacketStatusKernel)
+		s.offset = (s.offset + 1) % int(s.tpReq.frameNr)
+	}()
+
+	return fn(tp.payloadNoCopy(), tp.pktLen(), tp.packetType(), s.ipLayerOffset)
 }
 
 // Stats returns (and clears) the packet counters of the underlying socket
@@ -228,4 +186,31 @@ func (s *RingBufSource) Close() error {
 // Link returns the underlying link
 func (s *RingBufSource) Link() link.Link {
 	return s.link
+}
+
+func (s *RingBufSource) nextPacket() (tPacketHeaderV1, error) {
+	tp := s.nextTPacketHeader()
+	for tp.getStatus()&unix.TP_STATUS_USER == 0 {
+
+		wasCancelled, errno := event.Poll(s.eventFD, s.socketFD, unix.POLLIN|unix.POLLERR)
+		if errno != 0 {
+			if errno == unix.EINTR {
+				continue
+			}
+			return nil, fmt.Errorf("error polling for next packet: %d", errno)
+		}
+		if wasCancelled {
+			return nil, capture.ErrCaptureStopped
+		}
+
+		if tp.getStatus()&tPacketStatusCopy != 0 {
+			tp.setStatus(tPacketStatusKernel)
+			s.offset = (s.offset + 1) % int(s.tpReq.frameNr)
+			tp = s.nextTPacketHeader()
+
+			continue
+		}
+	}
+
+	return tp, nil
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"log"
 
-	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/capture/afpacket"
 	"github.com/fako1024/slimcap/link"
 )
@@ -11,7 +10,7 @@ import (
 func main() {
 
 	var (
-		devName = "eth0"
+		devName = "enp45s0u1u1"
 		maxPkts = 10
 	)
 
@@ -34,12 +33,31 @@ func main() {
 		}
 	}()
 
+	log.Printf("Reading %d packets from wire (copy operation)...", maxPkts)
 	for i := 0; i < maxPkts; i++ {
-		if err := listener.NextIPPacketFn(func(payload []byte, pktType capture.PacketType, ipLayerOffset int) error {
-			log.Printf("Received packet with IP layer on `%s`: %v (inbound: %v)", devName, payload, pktType == 0)
-			return nil
+		p, err := listener.NextPacket()
+		if err != nil {
+			log.Fatalf("error during capture (copy operation) on `%s`: %s", devName, err)
+		}
+		log.Printf("Received packet with Payload on `%s` (total len %d): %v (inbound: %v)", devName, p.TotalLen(), p.Payload(), p.Type() == 0)
+	}
+
+	log.Printf("Reading %d packets from wire (read into existing buffer)...", maxPkts)
+	p := make(afpacket.Packet, 64)
+	for i := 0; i < maxPkts; i++ {
+		if err := listener.NextPacketInto(&p); err != nil {
+			log.Fatalf("error during capture (read into existing buffer) on `%s`: %s", devName, err)
+		}
+		log.Printf("Received packet with Payload on `%s` (total len %d): %v (inbound: %v)", devName, p.TotalLen(), p.Payload(), p.Type() == 0)
+	}
+
+	log.Printf("Reading %d packets from wire (zero-copy function call)...", maxPkts)
+	for i := 0; i < maxPkts; i++ {
+		if err := listener.NextPacketFn(func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte) (err error) {
+			log.Printf("Received packet with Payload on `%s` (total len %d): %v (inbound: %v)", devName, totalLen, payload, pktType == 0)
+			return
 		}); err != nil {
-			log.Fatalf("error during capture on `%s`: %s", devName, err)
+			log.Fatalf("error during capture (zero-copy function call) on `%s`: %s", devName, err)
 		}
 	}
 }

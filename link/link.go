@@ -21,7 +21,7 @@ type LinkType int
 
 // IpHeaderOffset returns the link / interface specific payload offset for the IP header
 // c.f. https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/include/uapi/linux/if_arp.h
-func (l LinkType) IpHeaderOffset() int {
+func (l LinkType) IpHeaderOffset() byte {
 	switch l {
 	case 1, // ARPHRD_ETHER
 		772: // ARPHRD_LOOPBACK

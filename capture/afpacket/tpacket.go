@@ -8,8 +8,10 @@ import (
 )
 
 const (
-	tPacketAlignment   = uint(unix.TPACKET_ALIGNMENT)
-	tPacketHeaderV1Len = 31
+	tPacketAlignment = uint(unix.TPACKET_ALIGNMENT)
+
+	// TODO: This somehow doesn't seem right...
+	tPacketHeaderV1Len = 31 // 66 seems to be the index we get from payloadCopy()
 )
 
 const (

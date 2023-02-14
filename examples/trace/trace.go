@@ -192,9 +192,9 @@ func (c *Capture) Run() (err error) {
 			var nErr int
 			if c.useZeroCopy {
 				for {
-					if err := listener.NextIPPacketFn(func(payload []byte, pktType capture.PacketType, ipLayerOffset int) error {
+					if err := listener.NextPacketFn(func(payload []byte, totalLen uint32, pktType byte, ipLayerOffset byte) error {
 						if c.logPacketPayload {
-							log.Infof("[%s] Got %v / %d", l.Name, payload[:16], pktType)
+							log.Infof("[%s] Got %v / %d", l.Name, payload[ipLayerOffset:ipLayerOffset+16], pktType)
 						}
 						return nil
 					}); err != nil {
@@ -210,7 +210,7 @@ func (c *Capture) Run() (err error) {
 				}
 			} else {
 				for {
-					pkt, pktType, err := listener.NextIPPacket()
+					pkt, err := listener.NextPacket()
 					if err != nil {
 						if errors.Is(err, capture.ErrCaptureStopped) {
 							log.Infof("gracefully stopped capture on `%s`", l.Name)
@@ -223,7 +223,7 @@ func (c *Capture) Run() (err error) {
 					}
 
 					if c.logPacketPayload {
-						log.Infof("[%s] Got %v / %d", l.Name, pkt[:16], pktType)
+						log.Infof("[%s] Got IP layer %v / %d", l.Name, pkt.IPLayer()[:16], pkt.Type())
 					}
 				}
 			}
