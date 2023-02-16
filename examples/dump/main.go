@@ -43,7 +43,7 @@ func main() {
 	}
 
 	log.Printf("Reading %d packets from wire (read into existing buffer)...", maxPkts)
-	p := make(afpacket.Packet, 64)
+	p := make(afpacket.Packet, 70)
 	for i := 0; i < maxPkts; i++ {
 		if err := listener.NextPacketInto(&p); err != nil {
 			log.Fatalf("error during capture (read into existing buffer) on `%s`: %s", devName, err)

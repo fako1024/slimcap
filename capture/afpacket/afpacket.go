@@ -71,10 +71,10 @@ func setupSocket(iface link.Link) (event.FileDescriptor, error) {
 	return sd, nil
 }
 
-func getSocketStats(sd event.FileDescriptor) (tPacketStatsV1, error) {
+func getSocketStats(sd event.FileDescriptor) (tPacketStats, error) {
 
 	// Retrieve TPacket stats for the socket
-	ss := tPacketStatsV1{}
+	ss := tPacketStats{}
 	sockLen := unsafe.Sizeof(ss)
 	err := getsockopt(sd, unix.SOL_PACKET, unix.PACKET_STATISTICS, unsafe.Pointer(&ss), uintptr(unsafe.Pointer(&sockLen)))
 
@@ -96,7 +96,7 @@ func setSocketOptions(sd event.FileDescriptor, iface link.Link, snapLen int, pro
 		}
 		reqLen := unsafe.Sizeof(mReq)
 		if err := setsockopt(sd, unix.SOL_SOCKET, unix.PACKET_ADD_MEMBERSHIP, unsafe.Pointer(&mReq), uintptr(unsafe.Pointer(&reqLen))); err != nil {
-			return fmt.Errorf("failed to set promiscuous filter: %w", err)
+			return fmt.Errorf("failed to set promiscuous mode: %w", err)
 		}
 	}
 
@@ -114,7 +114,7 @@ func setSocketOptions(sd event.FileDescriptor, iface link.Link, snapLen int, pro
 	return nil
 }
 
-func setupRingBuffer(sd event.FileDescriptor, tPacketReq tPacketRequestV1) ([]byte, event.EvtFileDescriptor, error) {
+func setupRingBuffer(sd event.FileDescriptor, tPacketReq tPacketRequest) ([]byte, event.EvtFileDescriptor, error) {
 
 	// Setup event file descriptor used for stopping the capture (we start with that to avoid
 	// having to clean up the ring buffer in case the decriptor can't be created

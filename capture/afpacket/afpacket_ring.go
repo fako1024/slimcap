@@ -13,18 +13,19 @@ import (
 )
 
 const (
-	tPacketVersion = unix.TPACKET_V1
+	tPacketVersion = unix.TPACKET_V3
 )
 
 type ringBuffer struct {
 	ring []byte
 
-	tpReq  tPacketRequestV1
-	offset int
+	tpReq            tPacketRequest
+	curTPacketHeader *tPacketHeader
+	offset           int
 }
 
-func (b *ringBuffer) nextTPacketHeader() tPacketHeaderV1 {
-	return tPacketHeaderV1(b.ring[b.offset*int(b.tpReq.frameSize):])
+func (b *ringBuffer) nextTPacketHeader() *tPacketHeader {
+	return &tPacketHeader{data: b.ring[b.offset*int(b.tpReq.blockNr):]}
 }
 
 // RingBufSource denotes an AF_PACKET capture source making use of a ring buffer
@@ -63,7 +64,7 @@ func NewRingBufSource(iface link.Link, options ...Option) (*RingBufSource, error
 
 	// Define a new TPacket request
 	var err error
-	src.ringBuffer.tpReq, err = newTPacketRequestV1ForBuffer(src.bufSize, src.snapLen)
+	src.ringBuffer.tpReq, err = newTPacketRequestForBuffer(src.bufSize, src.snapLen)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup TPacket request on %s: %w", iface.Name, err)
 	}
@@ -95,41 +96,34 @@ func NewRingBufSource(iface link.Link, options ...Option) (*RingBufSource, error
 
 func (s *RingBufSource) NextPacket() (capture.Packet, error) {
 
-	tp, err := s.nextPacket()
-	if err != nil {
+	if err := s.nextPacket(); err != nil {
 		return nil, err
 	}
-	defer func() {
-		tp.setStatus(tPacketStatusKernel)
-		s.offset = (s.offset + 1) % int(s.tpReq.frameNr)
-	}()
 
-	data := make(Packet, 6+tp.snapLen())
-	data[0] = tp.packetType()
+	data := make(Packet, 6+s.curTPacketHeader.snapLen())
+	data[0] = s.curTPacketHeader.packetType()
 	data[1] = byte(s.ipLayerOffset)
-	binary.LittleEndian.PutUint32(data[2:6], tp.pktLen())
-	copy(data[6:], tp.payloadNoCopy())
+	binary.LittleEndian.PutUint32(data[2:6], s.curTPacketHeader.pktLen())
+	copy(data[6:], s.curTPacketHeader.payloadNoCopy())
 
 	return &data, nil
 }
 
 func (s *RingBufSource) NextPacketInto(p capture.Packet) error {
 
-	tp, err := s.nextPacket()
-	if err != nil {
+	if err := s.nextPacket(); err != nil {
 		return err
 	}
-	defer func() {
-		tp.setStatus(tPacketStatusKernel)
-		s.offset = (s.offset + 1) % int(s.tpReq.frameNr)
-	}()
 
 	if data, ok := p.(*Packet); ok {
-		(*data)[0] = tp.packetType()
+		if data.Len()+6 < int(s.curTPacketHeader.snapLen()) {
+			return fmt.Errorf("destination buffer / packet too small, need %d bytes, have %d", int(s.curTPacketHeader.snapLen())+6, data.Len())
+		}
+		(*data)[0] = s.curTPacketHeader.packetType()
 		(*data)[1] = byte(s.ipLayerOffset)
-		binary.LittleEndian.PutUint32((*data)[2:6], tp.pktLen())
-		copy((*data)[6:], tp.payloadNoCopy())
-		*data = (*data)[:6+tp.snapLen()]
+		binary.LittleEndian.PutUint32((*data)[2:6], s.curTPacketHeader.pktLen())
+		copy((*data)[6:], s.curTPacketHeader.payloadNoCopy())
+		*data = (*data)[:6+s.curTPacketHeader.snapLen()]
 	} else {
 		return fmt.Errorf("incompatible packet type `%s` for RingBufSource", reflect.TypeOf(p).String())
 	}
@@ -139,16 +133,11 @@ func (s *RingBufSource) NextPacketInto(p capture.Packet) error {
 
 func (s *RingBufSource) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType capture.PacketType, ipLayerOffset byte) error) error {
 
-	tp, err := s.nextPacket()
-	if err != nil {
+	if err := s.nextPacket(); err != nil {
 		return err
 	}
-	defer func() {
-		tp.setStatus(tPacketStatusKernel)
-		s.offset = (s.offset + 1) % int(s.tpReq.frameNr)
-	}()
 
-	return fn(tp.payloadNoCopy(), tp.pktLen(), tp.packetType(), s.ipLayerOffset)
+	return fn(s.curTPacketHeader.payloadNoCopy(), s.curTPacketHeader.pktLen(), s.curTPacketHeader.packetType(), s.ipLayerOffset)
 }
 
 // Stats returns (and clears) the packet counters of the underlying socket
@@ -168,7 +157,6 @@ func (s *RingBufSource) Stats() (capture.Stats, error) {
 
 // Close stops / closes the capture source
 func (s *RingBufSource) Close() error {
-
 	if err := s.eventFD.Stop(); err != nil {
 		return err
 	}
@@ -188,29 +176,50 @@ func (s *RingBufSource) Link() link.Link {
 	return s.link
 }
 
-func (s *RingBufSource) nextPacket() (tPacketHeaderV1, error) {
-	tp := s.nextTPacketHeader()
-	for tp.getStatus()&unix.TP_STATUS_USER == 0 {
+func (s *RingBufSource) nextPacket() error {
 
-		wasCancelled, errno := event.Poll(s.eventFD, s.socketFD, unix.POLLIN|unix.POLLERR)
-		if errno != 0 {
-			if errno == unix.EINTR {
+	// If the current TPacketHeader does not contain any more packets (or is uninitialized)
+	// fetch a new one from the ring buffer
+fetch:
+	if s.curTPacketHeader == nil {
+		s.curTPacketHeader = s.nextTPacketHeader()
+		for s.curTPacketHeader.getStatus()&unix.TP_STATUS_USER == 0 {
+			wasCancelled, errno := event.Poll(s.eventFD, s.socketFD, unix.POLLIN|unix.POLLERR)
+			if errno != 0 {
+				if errno == unix.EINTR {
+					continue
+				}
+				return fmt.Errorf("error polling for next packet: %d", errno)
+			}
+			if wasCancelled {
+				return capture.ErrCaptureStopped
+			}
+
+			if s.curTPacketHeader.getStatus()&tPacketStatusCopy != 0 {
+				s.curTPacketHeader.setStatus(tPacketStatusKernel)
+				s.offset = (s.offset + 1) % int(s.tpReq.frameNr)
+				s.curTPacketHeader = s.nextTPacketHeader()
+
 				continue
 			}
-			return nil, fmt.Errorf("error polling for next packet: %d", errno)
-		}
-		if wasCancelled {
-			return nil, capture.ErrCaptureStopped
 		}
 
-		if tp.getStatus()&tPacketStatusCopy != 0 {
-			tp.setStatus(tPacketStatusKernel)
-			s.offset = (s.offset + 1) % int(s.tpReq.frameNr)
-			tp = s.nextTPacketHeader()
+		// After fetching a new TPacketHeader, set the position of the first packet
+		s.curTPacketHeader.ppos = s.curTPacketHeader.offsetToFirstPkt()
+	} else {
 
-			continue
+		// If there is no next offset, release the TPacketHeader to the kernel and fetch a new one
+		nextPos := s.curTPacketHeader.nextOffset()
+		if nextPos == 0 {
+			s.curTPacketHeader.setStatus(tPacketStatusKernel)
+			s.offset = (s.offset + 1) % int(s.tpReq.blockNr)
+			s.curTPacketHeader = nil
+			goto fetch
 		}
+
+		// Update position of next packet
+		s.curTPacketHeader.ppos += nextPos
 	}
 
-	return tp, nil
+	return nil
 }

@@ -11,13 +11,13 @@ const (
 	tPacketAlignment = uint(unix.TPACKET_ALIGNMENT)
 
 	// TODO: This somehow doesn't seem right...
-	tPacketHeaderV1Len = 31 // 66 seems to be the index we get from payloadCopy()
+	tPacketHeaderLen = 31 // 66 seems to be the index we get from payloadCopy()
 )
 
 const (
 	tPacketStatusKernel = 0
-	tPacketStatusUser   = 1
-	tPacketStatusCopy   = 2
+	tPacketStatusUser   = (1 << 0)
+	tPacketStatusCopy   = (1 << 1)
 )
 
 var (
@@ -25,29 +25,33 @@ var (
 	tPacketDefaultBlockNr = 1
 )
 
-// tPacketRequestV1 denotes the tpacket_req structure, c.f.
+// tPacketRequest denotes the V3 tpacket_req structure, c.f.
 // https://www.kernel.org/doc/Documentation/networking/packet_mmap.txt
-type tPacketRequestV1 struct {
+type tPacketRequest struct {
 	blockSize uint32
 	blockNr   uint32
 	frameSize uint32
 	frameNr   uint32
+
+	retire_blk_tov   uint32 // TODO: What exactly does this do?
+	sizeof_priv      uint32
+	feature_req_word uint32
 }
 
-func newTPacketRequestV1ForBuffer(bufSize, snapLen int) (req tPacketRequestV1, err error) {
+func newTPacketRequestForBuffer(bufSize, snapLen int) (req tPacketRequest, err error) {
 
 	// Ensure the parameters are in alignment with the TPacket header length requirements
-	frameSize := tPacketAlign(tPacketHeaderV1Len + snapLen)
+	frameSize := tPacketAlign(tPacketHeaderLen + snapLen)
 	nBlocks := tPacketAlign(bufSize / frameSize)
 
-	return newTPacketRequestV1(frameSize, nBlocks, tPacketDefaultBlockNr)
+	return newTPacketRequest(frameSize, nBlocks, tPacketDefaultBlockNr)
 }
 
-func newTPacketRequestV1(frameSize, nBlocks, blockNr int) (req tPacketRequestV1, err error) {
+func newTPacketRequest(frameSize, nBlocks, blockNr int) (req tPacketRequest, err error) {
 
 	// Ensure the parameters are in alignment with the page size
 	blockSize := pageSizeAlign(frameSize * nBlocks)
-	req = tPacketRequestV1{
+	req = tPacketRequest{
 		blockSize: uint32(blockSize),
 		blockNr:   uint32(blockNr),
 		frameSize: uint32(frameSize),
@@ -57,54 +61,106 @@ func newTPacketRequestV1(frameSize, nBlocks, blockNr int) (req tPacketRequestV1,
 	return
 }
 
-func (t tPacketRequestV1) blockSizeNr() int {
+func (t tPacketRequest) blockSizeNr() int {
 	return int(t.blockSize * t.blockNr)
 }
 
-// tPacketHeaderV1 denotes the tpacket_hdr structure, c.f.
+// tPacketHeader denotes the V3 tpacket_hdr structure, c.f.
 // https://github.com/torvalds/linux/blob/master/include/uapi/linux/if_packet.h
-type tPacketHeaderV1 []byte
-
-func (t tPacketHeaderV1) getStatus() uint32 {
-	return *(*uint32)(unsafe.Pointer(&t[0]))
+type tPacketHeader struct {
+	data []byte
+	ppos uint32
 }
 
-func (t tPacketHeaderV1) setStatus(status uint32) {
-	*(*uint32)(unsafe.Pointer(&t[0])) = status
+// / -> Block Descriptor
+func (t tPacketHeader) version() uint32 {
+	return binary.LittleEndian.Uint32(t.data[0:4])
 }
 
-func (t tPacketHeaderV1) pktLen() uint32 {
-	return binary.LittleEndian.Uint32(t[8:12])
+func (t tPacketHeader) privOffset() uint32 {
+	return binary.LittleEndian.Uint32(t.data[4:8])
 }
 
-func (t tPacketHeaderV1) snapLen() uint32 {
-	return binary.LittleEndian.Uint32(t[12:16])
+// / -> Block Header
+func (t tPacketHeader) getStatus() uint32 {
+	return *(*uint32)(unsafe.Pointer(&t.data[8]))
 }
 
-func (t tPacketHeaderV1) mac() uint16 {
-	return binary.LittleEndian.Uint16(t[16:18])
+func (t tPacketHeader) setStatus(status uint32) {
+	*(*uint32)(unsafe.Pointer(&t.data[8])) = status
 }
 
-func (t tPacketHeaderV1) packetType() byte {
-	return t[42]
+func (t tPacketHeader) nPkts() uint32 {
+	return binary.LittleEndian.Uint32(t.data[12:16])
 }
 
-func (t tPacketHeaderV1) payloadNoCopy() []byte {
-	return t[uint32(t.mac()) : uint32(t.mac())+t.snapLen()]
+func (t tPacketHeader) offsetToFirstPkt() uint32 {
+	return binary.LittleEndian.Uint32(t.data[16:20])
 }
 
-func (t tPacketHeaderV1) payloadCopy() []byte {
+func (t tPacketHeader) blockLen() uint32 {
+	return binary.LittleEndian.Uint32(t.data[20:24])
+}
+
+// According to linux/if_packet.h this is aligned to an 8-byte boundary instead of 4.
+func (t tPacketHeader) seqNumber() uint64 {
+	return binary.LittleEndian.Uint64(t.data[24:32])
+}
+
+// 2 * 3 * uint32 for timestamps
+
+// / -> Packet Header
+func (t tPacketHeader) nextOffset() uint32 {
+	return binary.LittleEndian.Uint32(t.data[t.ppos : t.ppos+4])
+}
+
+// 2 * uint32 for timestamps
+
+func (t tPacketHeader) snapLen() uint32 {
+	return binary.LittleEndian.Uint32(t.data[t.ppos+12 : t.ppos+16])
+}
+
+func (t tPacketHeader) pktLen() uint32 {
+	return binary.LittleEndian.Uint32(t.data[t.ppos+16 : t.ppos+20])
+}
+
+func (t tPacketHeader) getPacketStatus() uint32 {
+	return *(*uint32)(unsafe.Pointer(&t.data[t.ppos+20]))
+}
+
+func (t tPacketHeader) setPacketStatus(status uint32) {
+	*(*uint32)(unsafe.Pointer(&t.data[t.ppos+20])) = status
+}
+
+func (t tPacketHeader) mac() uint16 {
+	return binary.LittleEndian.Uint16(t.data[t.ppos+24 : t.ppos+26])
+}
+
+func (t tPacketHeader) net() uint16 {
+	return binary.LittleEndian.Uint16(t.data[t.ppos+26 : t.ppos+28])
+}
+
+func (t tPacketHeader) packetType() byte {
+	return t.data[t.ppos+58]
+}
+
+func (t tPacketHeader) payloadNoCopy() []byte {
+	return t.data[t.ppos+uint32(t.mac()) : t.ppos+uint32(t.mac())+t.snapLen()]
+}
+
+func (t tPacketHeader) payloadCopy() []byte {
 	rawPayload := t.payloadNoCopy()
 	cpPayload := make([]byte, len(rawPayload))
 	copy(cpPayload, rawPayload)
 	return cpPayload
 }
 
-// tPacketStatsV1 denotes the tpacket_stats structure, c.f.
+// tPacketStats denotes the V3 tpacket_stats structure, c.f.
 // https://github.com/torvalds/linux/blob/master/include/uapi/linux/if_packet.h
-type tPacketStatsV1 struct {
-	packets uint32
-	drops   uint32
+type tPacketStats struct {
+	packets      uint32
+	drops        uint32
+	queueFreezes uint32
 }
 
 func tPacketAlign(x int) int {
