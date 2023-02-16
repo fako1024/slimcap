@@ -35,7 +35,7 @@ func main() {
 
 	log.Printf("Reading %d packets from wire (copy operation)...", maxPkts)
 	for i := 0; i < maxPkts; i++ {
-		p, err := listener.NextPacket()
+		p, err := listener.NextPacket(nil)
 		if err != nil {
 			log.Fatalf("error during capture (copy operation) on `%s`: %s", devName, err)
 		}
@@ -45,7 +45,7 @@ func main() {
 	log.Printf("Reading %d packets from wire (read into existing buffer)...", maxPkts)
 	p := listener.NewPacket()
 	for i := 0; i < maxPkts; i++ {
-		if err := listener.NextPacketInto(p); err != nil {
+		if p, err = listener.NextPacket(p); err != nil {
 			log.Fatalf("error during capture (read into existing buffer) on `%s`: %s", devName, err)
 		}
 		log.Printf("Received packet with Payload on `%s` (total len %d): %v (inbound: %v)", devName, p.TotalLen(), p.Payload(), p.Type() == 0)

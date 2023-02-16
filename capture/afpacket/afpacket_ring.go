@@ -94,48 +94,52 @@ func NewRingBufSource(iface link.Link, options ...Option) (*RingBufSource, error
 	return src, nil
 }
 
+// NewPacket creates an empty "buffer" package to be used as destination for the NextPacketInto()
+// method. It ensures that a valid packet of appropriate structure / length is created
 func (s *RingBufSource) NewPacket() capture.Packet {
 	p := make(Packet, 6+s.snapLen)
 	return &p
 }
 
-func (s *RingBufSource) NextPacket() (capture.Packet, error) {
+// NextPacket receives the next packet from the wire and returns it. The operation is blocking. In
+// case a non-nil "buffer" Packet is provided it will be populated with the data (and returned). The
+// buffer packet can be reused. Otherwise a new Packet of the Source-specific type is allocated.
+func (s *RingBufSource) NextPacket(pBuf capture.Packet) (capture.Packet, error) {
 
 	if err := s.nextPacket(); err != nil {
 		return nil, err
 	}
+	var data *Packet
 
-	data := make(Packet, 6+s.curTPacketHeader.snapLen())
-	data[0] = s.curTPacketHeader.packetType()
-	data[1] = byte(s.ipLayerOffset)
-	binary.LittleEndian.PutUint32(data[2:6], s.curTPacketHeader.pktLen())
-	copy(data[6:], s.curTPacketHeader.payloadNoCopy())
-
-	return &data, nil
-}
-
-func (s *RingBufSource) NextPacketInto(p capture.Packet) error {
-
-	if err := s.nextPacket(); err != nil {
-		return err
-	}
-
-	if data, ok := p.(*Packet); ok {
-		if data.Len()+6 < int(s.curTPacketHeader.snapLen()) {
-			return fmt.Errorf("destination buffer / packet too small, need %d bytes, have %d", int(s.curTPacketHeader.snapLen())+6, data.Len())
+	// If a buffer was provided, assert the correct type and valid length
+	// Otherwise, allocate a new Packet
+	if pBuf != nil {
+		var ok bool
+		if data, ok = pBuf.(*Packet); ok {
+			if data.Len()+6 < int(s.curTPacketHeader.snapLen()) {
+				return nil, fmt.Errorf("destination buffer / packet too small, need %d bytes, have %d", int(s.curTPacketHeader.snapLen()), data.Len()+6)
+			}
+		} else {
+			return nil, fmt.Errorf("incompatible packet type `%s` for RingBufSource", reflect.TypeOf(pBuf).String())
 		}
-		(*data)[0] = s.curTPacketHeader.packetType()
-		(*data)[1] = byte(s.ipLayerOffset)
-		binary.LittleEndian.PutUint32((*data)[2:6], s.curTPacketHeader.pktLen())
-		copy((*data)[6:], s.curTPacketHeader.payloadNoCopy())
-		*data = (*data)[:6+s.curTPacketHeader.snapLen()]
 	} else {
-		return fmt.Errorf("incompatible packet type `%s` for RingBufSource", reflect.TypeOf(p).String())
+		p := make(Packet, 6+s.curTPacketHeader.snapLen())
+		data = &p
 	}
 
-	return nil
+	// Populate the packet
+	(*data)[0] = s.curTPacketHeader.packetType()
+	(*data)[1] = byte(s.ipLayerOffset)
+	binary.LittleEndian.PutUint32((*data)[2:6], s.curTPacketHeader.pktLen())
+	copy((*data)[6:], s.curTPacketHeader.payloadNoCopy())
+	*data = (*data)[:6+s.curTPacketHeader.snapLen()]
+
+	return data, nil
 }
 
+// NextIPPacketFn executed the provided function on the next packet received on the wire and only
+// return the ring buffer block to the kernel upon completion of the function. If possible, the
+// operation should provide a zero-copy way of interaction with the payload / metadata.
 func (s *RingBufSource) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType capture.PacketType, ipLayerOffset byte) error) error {
 
 	if err := s.nextPacket(); err != nil {

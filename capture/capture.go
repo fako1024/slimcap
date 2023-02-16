@@ -28,20 +28,14 @@ type Source interface {
 	// method. It ensures that a valid packet of appropriate structure / length is created
 	NewPacket() Packet
 
-	// NextRawPacketPayload receives the next packet from the wire and returns its
-	// raw payload along with the packet type flag (including all layers)
-	// Note: This method returns a copy of the underlying data
-	NextPacket() (Packet, error)
+	// NextPacket receives the next packet from the wire and returns it. The operation is blocking. In
+	// case a non-nil "buffer" Packet is provided it will be populated with the data (and returned). The
+	// buffer packet can be reused. Otherwise a new Packet of the Source-specific type is allocated.
+	NextPacket(pBuf Packet) (Packet, error)
 
-	// NextIPPacket receives the next packet from the wire and returns its
-	// IP layer payload (taking into account the underlying interface / link)
-	// Packets without a valid IPv4 / IPv6 layer are discarded
-	// Note: This method returns a copy of the underlying data
-	NextPacketInto(p Packet) error
-
-	// NextIPPacketFn executed the provided function on the next packet received
-	// on the wire
-	// Note: If possible, the method will perform a zero-copy operation
+	// NextIPPacketFn executed the provided function on the next packet received on the wire and only
+	// return the ring buffer block to the kernel upon completion of the function. If possible, the
+	// operation should provide a zero-copy way of interaction with the payload / metadata.
 	NextPacketFn(func(payload []byte, totalLen uint32, pktType PacketType, ipLayerOffset byte) error) error
 
 	// Stats returns (and clears) the packet counters of the underlying socket

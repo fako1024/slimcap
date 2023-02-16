@@ -65,37 +65,45 @@ func NewSource(iface link.Link, options ...Option) (*Source, error) {
 	return src, nil
 }
 
+// NewPacket creates an empty "buffer" package to be used as destination for the NextPacketInto()
+// method. It ensures that a valid packet of appropriate structure / length is created
 func (s *Source) NewPacket() capture.Packet {
 	p := make(Packet, 6+s.snapLen)
 	return &p
 }
 
-func (s *Source) NextPacket() (capture.Packet, error) {
+// NextPacket receives the next packet from the wire and returns it. The operation is blocking. In
+// case a non-nil "buffer" Packet is provided it will be populated with the data (and returned). The
+// buffer packet can be reused. Otherwise a new Packet of the Source-specific type is allocated.
+func (s *Source) NextPacket(pBuf capture.Packet) (capture.Packet, error) {
 
 	n, err := s.nextPacketInto(&s.buf)
 	if err != nil {
 		return nil, err
 	}
 
-	return copyData((s.buf)[:n+6]), nil
-}
-
-func (s *Source) NextPacketInto(p capture.Packet) error {
-
-	data, ok := p.(*Packet)
-	if !ok {
-		return fmt.Errorf("incompatible packet type `%s` for Source", reflect.TypeOf(p).String())
+	// If no buffer was provided, return a copy of the packet
+	if pBuf == nil {
+		return copyData((s.buf)[:n+6]), nil
 	}
 
-	n, err := s.nextPacketInto(data)
-	if err != nil {
-		return err
+	// Assert the correct type and valid length of the buffer
+	data, ok := pBuf.(*Packet)
+	if ok {
+		if data.Len()+6 < n+6 {
+			return nil, fmt.Errorf("destination buffer / packet too small, need %d bytes, have %d", n+6, data.Len()+6)
+		}
+	} else {
+		return nil, fmt.Errorf("incompatible packet type `%s` for RingBufSource", reflect.TypeOf(pBuf).String())
 	}
+	copy(*data, (s.buf)[:n+6])
 
-	(*data) = (*data)[:n+6]
-	return nil
+	return data, nil
 }
 
+// NextIPPacketFn executed the provided function on the next packet received on the wire and only
+// return the ring buffer block to the kernel upon completion of the function. If possible, the
+// operation should provide a zero-copy way of interaction with the payload / metadata.
 func (s *Source) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType capture.PacketType, ipLayerOffset byte) error) error {
 
 	// Receive a packet from the write

@@ -210,7 +210,7 @@ func (c *Capture) Run() (err error) {
 				}
 			} else {
 				for {
-					pkt, err := listener.NextPacket()
+					pkt, err := listener.NextPacket(nil)
 					if err != nil {
 						if errors.Is(err, capture.ErrCaptureStopped) {
 							log.Infof("gracefully stopped capture on `%s`", l.Name)
