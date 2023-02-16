@@ -94,6 +94,11 @@ func NewRingBufSource(iface link.Link, options ...Option) (*RingBufSource, error
 	return src, nil
 }
 
+func (s *RingBufSource) NewPacket() capture.Packet {
+	p := make(Packet, 6+s.snapLen)
+	return &p
+}
+
 func (s *RingBufSource) NextPacket() (capture.Packet, error) {
 
 	if err := s.nextPacket(); err != nil {

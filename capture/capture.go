@@ -24,6 +24,10 @@ type PacketType = byte
 // Source denotes a generic packet capture source
 type Source interface {
 
+	// NewPacket creates an empty "buffer" package to be used as destination for the NextPacketInto()
+	// method. It ensures that a valid packet of appropriate structure / length is created
+	NewPacket() Packet
+
 	// NextRawPacketPayload receives the next packet from the wire and returns its
 	// raw payload along with the packet type flag (including all layers)
 	// Note: This method returns a copy of the underlying data

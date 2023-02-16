@@ -65,6 +65,11 @@ func NewSource(iface link.Link, options ...Option) (*Source, error) {
 	return src, nil
 }
 
+func (s *Source) NewPacket() capture.Packet {
+	p := make(Packet, 6+s.snapLen)
+	return &p
+}
+
 func (s *Source) NextPacket() (capture.Packet, error) {
 
 	n, err := s.nextPacketInto(&s.buf)
