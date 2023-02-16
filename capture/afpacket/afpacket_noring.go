@@ -90,6 +90,7 @@ func (s *Source) NextPacket(pBuf capture.Packet) (capture.Packet, error) {
 	// Assert the correct type and valid length of the buffer
 	data, ok := pBuf.(*Packet)
 	if ok {
+		*data = (*data)[:cap(*data)]
 		if data.Len()+6 < n+6 {
 			return nil, fmt.Errorf("destination buffer / packet too small, need %d bytes, have %d", n+6, data.Len()+6)
 		}

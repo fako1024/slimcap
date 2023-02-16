@@ -116,6 +116,7 @@ func (s *RingBufSource) NextPacket(pBuf capture.Packet) (capture.Packet, error) 
 	if pBuf != nil {
 		var ok bool
 		if data, ok = pBuf.(*Packet); ok {
+			*data = (*data)[:cap(*data)]
 			if data.Len()+6 < int(s.curTPacketHeader.snapLen()) {
 				return nil, fmt.Errorf("destination buffer / packet too small, need %d bytes, have %d", int(s.curTPacketHeader.snapLen()), data.Len()+6)
 			}
