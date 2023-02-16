@@ -21,7 +21,7 @@ func main() {
 
 	listener, err := afpacket.NewRingBufSource(link,
 		afpacket.CaptureLength(64),
-		afpacket.BufferSize(1*1024*1024),
+		afpacket.BufferSize((1<<20), 4),
 		afpacket.Promiscuous(false),
 	)
 	if err != nil {

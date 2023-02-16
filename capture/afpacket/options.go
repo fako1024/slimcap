@@ -24,10 +24,11 @@ func CaptureLength(snapLen int) Option {
 }
 
 // BufferSize sets a custom overall buffer size
-func BufferSize(bufSize int) Option {
+func BufferSize(blockSize, nBlocks int) Option {
 	return func(s capture.Source) (err error) {
 		if x, ok := s.(*RingBufSource); ok {
-			x.bufSize = bufSize
+			x.blockSize = blockSize
+			x.nBlocks = nBlocks
 		} else {
 			err = errors.New("option `BufferSize()` not supported for this capture source")
 		}

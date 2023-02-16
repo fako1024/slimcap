@@ -15,8 +15,10 @@ import (
 )
 
 const (
-	DefaultSnapLen = 262144
-	defaultBufSize = 4096000
+	DefaultSnapLen = (1 << 16) // 64 kiB
+
+	defaultBlockSize = (1 << 20) // 1 MiB
+	defaultNBlocks   = 4
 )
 
 // Packet denotes a packet retrieved via the AF_PACKET ring buffer,

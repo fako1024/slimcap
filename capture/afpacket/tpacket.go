@@ -9,20 +9,20 @@ import (
 
 const (
 	tPacketAlignment = uint(unix.TPACKET_ALIGNMENT)
-
-	// TODO: This somehow doesn't seem right...
-	tPacketHeaderLen = 31 // 66 seems to be the index we get from payloadCopy()
+	tPacketHeaderLen = 48 // sizeof(tpacket3_hdr)
 )
 
 const (
 	tPacketStatusKernel = 0
 	tPacketStatusUser   = (1 << 0)
 	tPacketStatusCopy   = (1 << 1)
+
+	tPacketDefaultBlockNr  = 4   // sizeof(tpacket3_hdr)
+	tPacketDefaultBlockTOV = 100 // ms
 )
 
 var (
-	pageSizeAlignment     = uint(unix.Getpagesize())
-	tPacketDefaultBlockNr = 1
+	pageSizeAlignment = uint(unix.Getpagesize())
 )
 
 // tPacketRequest denotes the V3 tpacket_req structure, c.f.
@@ -33,29 +33,44 @@ type tPacketRequest struct {
 	frameSize uint32
 	frameNr   uint32
 
-	retire_blk_tov   uint32 // TODO: What exactly does this do?
+	retire_blk_tov   uint32
 	sizeof_priv      uint32
 	feature_req_word uint32
 }
 
-func newTPacketRequestForBuffer(bufSize, snapLen int) (req tPacketRequest, err error) {
+func newTPacketRequestForBuffer(blockSize, nBlocks, snapLen int) (req tPacketRequest, err error) {
 
-	// Ensure the parameters are in alignment with the TPacket header length requirements
-	frameSize := tPacketAlign(tPacketHeaderLen + snapLen)
-	nBlocks := tPacketAlign(bufSize / frameSize)
+	// The block size is the overall length of a block's continuous memory buffer. It should be chosen
+	// to be a power of two (otherwise all excess memory would be wasted),
+	blockSize = pageSizeAlign(blockSize)
 
-	return newTPacketRequest(frameSize, nBlocks, tPacketDefaultBlockNr)
+	// The number of blocks defines how many ring buffer blocks (i.e. batches of frames / packets)
+	// are created. This probably shouldn't be too high in order to minimize the number of syscalls
+	// in favor of more frames / packets per block, maximizing the amount of in-memory operations.
+	_ = nBlocks
+
+	// The frame size is the _minimum_ size of a frame (i.e. individual packet) in a block
+	// It is optimally set to the per-packet TPacket header length plus defined snaplen. However, it must
+	// be a multiple of tPacketAlignment AND blockSize must be a multiple of the frameSize
+	frameSize := blockSizeTPacketAlign(tPacketHeaderLen+snapLen, blockSize)
+
+	return newTPacketRequest(blockSize, nBlocks, frameSize)
 }
 
-func newTPacketRequest(frameSize, nBlocks, blockNr int) (req tPacketRequest, err error) {
+func newTPacketRequest(blockSize, blockNr, frameSize int) (req tPacketRequest, err error) {
 
-	// Ensure the parameters are in alignment with the page size
-	blockSize := pageSizeAlign(frameSize * nBlocks)
+	// Ensure the parameters are in alignment with the TPacket header length requirements:
+	// blockSize must be a multiple of the page size
+	// frameSize must be greater than tPacketHeaderLen
+	// frameSize must be a multiple of tPacketAlignment
+	// frameNr  must be exactly (blockSize*blockNr) / frameSize
+
 	req = tPacketRequest{
-		blockSize: uint32(blockSize),
-		blockNr:   uint32(blockNr),
-		frameSize: uint32(frameSize),
-		frameNr:   (uint32(blockSize) * uint32(blockNr)) / uint32(frameSize),
+		blockSize:      uint32(blockSize),
+		blockNr:        uint32(blockNr),
+		frameSize:      uint32(frameSize),
+		frameNr:        (uint32(blockSize) * uint32(blockNr)) / uint32(frameSize),
+		retire_blk_tov: tPacketDefaultBlockTOV,
 	}
 
 	return
@@ -169,4 +184,12 @@ func tPacketAlign(x int) int {
 
 func pageSizeAlign(x int) int {
 	return int((uint(x) + pageSizeAlignment - 1) &^ (pageSizeAlignment - 1))
+}
+
+func blockSizeTPacketAlign(x, blockSize int) int {
+	for i := uint(x); ; i++ {
+		if i%tPacketAlignment == 0 && uint(blockSize)%i == 0 {
+			return int(i)
+		}
+	}
 }

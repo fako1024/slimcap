@@ -25,7 +25,7 @@ type ringBuffer struct {
 }
 
 func (b *ringBuffer) nextTPacketHeader() *tPacketHeader {
-	return &tPacketHeader{data: b.ring[b.offset*int(b.tpReq.blockNr):]}
+	return &tPacketHeader{data: b.ring[b.offset*int(b.tpReq.blockSize):]}
 }
 
 // RingBufSource denotes an AF_PACKET capture source making use of a ring buffer
@@ -33,11 +33,11 @@ type RingBufSource struct {
 	socketFD event.FileDescriptor
 	eventFD  event.EvtFileDescriptor
 
-	ipLayerOffset byte
-	snapLen       int
-	bufSize       int
-	isPromisc     bool
-	link          link.Link
+	ipLayerOffset      byte
+	snapLen            int
+	blockSize, nBlocks int
+	isPromisc          bool
+	link               link.Link
 
 	ringBuffer
 
@@ -50,7 +50,8 @@ func NewRingBufSource(iface link.Link, options ...Option) (*RingBufSource, error
 	// Define new source
 	src := &RingBufSource{
 		snapLen:       DefaultSnapLen,
-		bufSize:       defaultBufSize,
+		blockSize:     defaultBlockSize,
+		nBlocks:       defaultNBlocks,
 		ipLayerOffset: iface.LinkType.IpHeaderOffset(),
 		link:          iface,
 		Mutex:         sync.Mutex{},
@@ -64,7 +65,7 @@ func NewRingBufSource(iface link.Link, options ...Option) (*RingBufSource, error
 
 	// Define a new TPacket request
 	var err error
-	src.ringBuffer.tpReq, err = newTPacketRequestForBuffer(src.bufSize, src.snapLen)
+	src.ringBuffer.tpReq, err = newTPacketRequestForBuffer(src.blockSize, src.nBlocks, src.snapLen)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup TPacket request on %s: %w", iface.Name, err)
 	}
