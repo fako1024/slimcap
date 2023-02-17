@@ -20,7 +20,9 @@ func pollBlock(fds *unix.PollFd, nfds int) unix.Errno
 // imply that it's ok to use in favor of exposing that functionality (c.f. https://github.com/golang/go/issues/29734)
 
 //go:linkname entersyscallblock runtime.entersyscallblock
-//go:linkname exitsyscall runtime.exitsyscall
 //go:noescape
 func entersyscallblock() //nolint:deadcode
-func exitsyscall()       //nolint:deadcode
+
+//go:linkname exitsyscall runtime.exitsyscall
+//go:noescape
+func exitsyscall() //nolint:deadcode
