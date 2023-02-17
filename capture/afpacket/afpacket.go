@@ -4,7 +4,6 @@
 package afpacket
 
 import (
-	"encoding/binary"
 	"fmt"
 	"unsafe"
 
@@ -16,9 +15,6 @@ import (
 
 const (
 	DefaultSnapLen = (1 << 16) // 64 kiB
-
-	defaultBlockSize = (1 << 20) // 1 MiB
-	defaultNBlocks   = 4
 )
 
 // Packet denotes a packet retrieved via the AF_PACKET ring buffer,
@@ -30,13 +26,13 @@ type Packet []byte
 
 // TotalLen returnsthe total packet length, including all headers
 func (p *Packet) TotalLen() uint32 {
-	return binary.LittleEndian.Uint32((*p)[2:6])
+	return *(*uint32)(unsafe.Pointer(&(*p)[2]))
 }
 
 // Len returns the actual data length of the packet payload as consumed from the wire
 // (may be truncated due to)
 func (p *Packet) Len() int {
-	return len((*p)[6:])
+	return len((*p)) - 6
 }
 
 // Payload returns the raw payload / network layers of the packet

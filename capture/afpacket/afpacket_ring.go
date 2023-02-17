@@ -1,7 +1,6 @@
 package afpacket
 
 import (
-	"encoding/binary"
 	"fmt"
 	"reflect"
 	"sync"
@@ -50,8 +49,8 @@ func NewRingBufSource(iface link.Link, options ...Option) (*RingBufSource, error
 	// Define new source
 	src := &RingBufSource{
 		snapLen:       DefaultSnapLen,
-		blockSize:     defaultBlockSize,
-		nBlocks:       defaultNBlocks,
+		blockSize:     tPacketDefaultBlockSize,
+		nBlocks:       tPacketDefaultBlockNr,
 		ipLayerOffset: iface.LinkType.IpHeaderOffset(),
 		link:          iface,
 		Mutex:         sync.Mutex{},
@@ -118,9 +117,6 @@ func (s *RingBufSource) NextPacket(pBuf capture.Packet) (capture.Packet, error) 
 		var ok bool
 		if data, ok = pBuf.(*Packet); ok {
 			*data = (*data)[:cap(*data)]
-			if data.Len()+6 < int(s.curTPacketHeader.snapLen()) {
-				return nil, fmt.Errorf("destination buffer / packet too small, need %d bytes, have %d", int(s.curTPacketHeader.snapLen()), data.Len()+6)
-			}
 		} else {
 			return nil, fmt.Errorf("incompatible packet type `%s` for RingBufSource", reflect.TypeOf(pBuf).String())
 		}
@@ -131,9 +127,9 @@ func (s *RingBufSource) NextPacket(pBuf capture.Packet) (capture.Packet, error) 
 
 	// Populate the packet
 	(*data)[0] = s.curTPacketHeader.packetType()
-	(*data)[1] = byte(s.ipLayerOffset)
-	binary.LittleEndian.PutUint32((*data)[2:6], s.curTPacketHeader.pktLen())
-	copy((*data)[6:], s.curTPacketHeader.payloadNoCopy())
+	(*data)[1] = s.ipLayerOffset
+	s.curTPacketHeader.pktLenPut((*data)[2:6])
+	s.curTPacketHeader.payloadCopyPut((*data)[6:])
 	*data = (*data)[:6+s.curTPacketHeader.snapLen()]
 
 	return data, nil

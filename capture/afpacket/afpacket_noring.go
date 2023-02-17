@@ -1,7 +1,6 @@
 package afpacket
 
 import (
-	"encoding/binary"
 	"fmt"
 	"reflect"
 	"sync"
@@ -165,7 +164,7 @@ func (s *Source) nextPacketInto(data *Packet) (int, error) {
 	}
 
 	(*data)[1] = byte(s.ipLayerOffset)
-	binary.LittleEndian.PutUint32((*data)[2:6], 0) // TODO: How do we get the total packet size from a plain socket?
+	// binary.LittleEndian.PutUint32((*data)[2:6], 0) // TODO: How do we get the total packet size from a plain socket (do not use binary package)
 
 	return n, nil
 }

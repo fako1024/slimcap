@@ -1,7 +1,6 @@
 package afpacket
 
 import (
-	"encoding/binary"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -17,8 +16,9 @@ const (
 	tPacketStatusUser   = (1 << 0)
 	tPacketStatusCopy   = (1 << 1)
 
-	tPacketDefaultBlockNr  = 4   // sizeof(tpacket3_hdr)
-	tPacketDefaultBlockTOV = 100 // ms
+	tPacketDefaultBlockNr   = 4         // sizeof(tpacket3_hdr)
+	tPacketDefaultBlockSize = (1 << 20) // 1 MiB
+	tPacketDefaultBlockTOV  = 100       // ms
 )
 
 var (
@@ -89,11 +89,11 @@ type tPacketHeader struct {
 
 // / -> Block Descriptor
 func (t tPacketHeader) version() uint32 {
-	return binary.LittleEndian.Uint32(t.data[0:4])
+	return *(*uint32)(unsafe.Pointer(&t.data[0]))
 }
 
 func (t tPacketHeader) privOffset() uint32 {
-	return binary.LittleEndian.Uint32(t.data[4:8])
+	return *(*uint32)(unsafe.Pointer(&t.data[4]))
 }
 
 // / -> Block Header
@@ -106,37 +106,41 @@ func (t tPacketHeader) setStatus(status uint32) {
 }
 
 func (t tPacketHeader) nPkts() uint32 {
-	return binary.LittleEndian.Uint32(t.data[12:16])
+	return *(*uint32)(unsafe.Pointer(&t.data[12]))
 }
 
 func (t tPacketHeader) offsetToFirstPkt() uint32 {
-	return binary.LittleEndian.Uint32(t.data[16:20])
+	return *(*uint32)(unsafe.Pointer(&t.data[16]))
 }
 
 func (t tPacketHeader) blockLen() uint32 {
-	return binary.LittleEndian.Uint32(t.data[20:24])
+	return *(*uint32)(unsafe.Pointer(&t.data[20]))
 }
 
 // According to linux/if_packet.h this is aligned to an 8-byte boundary instead of 4.
 func (t tPacketHeader) seqNumber() uint64 {
-	return binary.LittleEndian.Uint64(t.data[24:32])
+	return *(*uint64)(unsafe.Pointer(&t.data[24]))
 }
 
 // 2 * 3 * uint32 for timestamps
 
 // / -> Packet Header
 func (t tPacketHeader) nextOffset() uint32 {
-	return binary.LittleEndian.Uint32(t.data[t.ppos : t.ppos+4])
+	return *(*uint32)(unsafe.Pointer(&t.data[t.ppos]))
 }
 
 // 2 * uint32 for timestamps
 
 func (t tPacketHeader) snapLen() uint32 {
-	return binary.LittleEndian.Uint32(t.data[t.ppos+12 : t.ppos+16])
+	return *(*uint32)(unsafe.Pointer(&t.data[t.ppos+12]))
 }
 
 func (t tPacketHeader) pktLen() uint32 {
-	return binary.LittleEndian.Uint32(t.data[t.ppos+16 : t.ppos+20])
+	return *(*uint32)(unsafe.Pointer(&t.data[t.ppos+16]))
+}
+
+func (t tPacketHeader) pktLenPut(data []byte) {
+	copy(data, t.data[t.ppos+16:t.ppos+20])
 }
 
 func (t tPacketHeader) getPacketStatus() uint32 {
@@ -148,11 +152,11 @@ func (t tPacketHeader) setPacketStatus(status uint32) {
 }
 
 func (t tPacketHeader) mac() uint16 {
-	return binary.LittleEndian.Uint16(t.data[t.ppos+24 : t.ppos+26])
+	return *(*uint16)(unsafe.Pointer(&t.data[t.ppos+24]))
 }
 
 func (t tPacketHeader) net() uint16 {
-	return binary.LittleEndian.Uint16(t.data[t.ppos+26 : t.ppos+28])
+	return *(*uint16)(unsafe.Pointer(&t.data[t.ppos+26]))
 }
 
 func (t tPacketHeader) packetType() byte {
@@ -160,7 +164,13 @@ func (t tPacketHeader) packetType() byte {
 }
 
 func (t tPacketHeader) payloadNoCopy() []byte {
-	return t.data[t.ppos+uint32(t.mac()) : t.ppos+uint32(t.mac())+t.snapLen()]
+	mac := uint32(*(*uint16)(unsafe.Pointer(&t.data[t.ppos+24])))
+	return t.data[t.ppos+mac : t.ppos+mac+t.snapLen()]
+}
+
+func (t tPacketHeader) payloadCopyPut(data []byte) {
+	mac := uint32(*(*uint16)(unsafe.Pointer(&t.data[t.ppos+24])))
+	copy(data, t.data[t.ppos+mac:t.ppos+mac+t.snapLen()])
 }
 
 func (t tPacketHeader) payloadCopy() []byte {

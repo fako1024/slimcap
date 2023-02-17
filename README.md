@@ -45,7 +45,7 @@ func main() {
 
 	listener, err := afpacket.NewRingBufSource(link,
 		afpacket.CaptureLength(64),
-		afpacket.BufferSize(1*1024*1024),
+		afpacket.BufferSize((1<<20), 4),
 		afpacket.Promiscuous(false),
 	)
 	if err != nil {
@@ -57,12 +57,31 @@ func main() {
 		}
 	}()
 
+	log.Printf("Reading %d packets from wire (copy operation)...", maxPkts)
 	for i := 0; i < maxPkts; i++ {
-		if err := listener.NextIPPacketFn(func(payload []byte, pktType capture.PacketType, ipLayerOffset int) error {
-			log.Printf("Received packet with IP layer on `%s`: %v (inbound: %v)", devName, payload, pktType == 0)
-			return nil
+		p, err := listener.NextPacket(nil)
+		if err != nil {
+			log.Fatalf("error during capture (copy operation) on `%s`: %s", devName, err)
+		}
+		log.Printf("Received packet with Payload on `%s` (total len %d): %v (inbound: %v)", devName, p.TotalLen(), p.Payload(), p.Type() == 0)
+	}
+
+	log.Printf("Reading %d packets from wire (read into existing buffer)...", maxPkts)
+	p := listener.NewPacket()
+	for i := 0; i < maxPkts; i++ {
+		if p, err = listener.NextPacket(p); err != nil {
+			log.Fatalf("error during capture (read into existing buffer) on `%s`: %s", devName, err)
+		}
+		log.Printf("Received packet with Payload on `%s` (total len %d): %v (inbound: %v)", devName, p.TotalLen(), p.Payload(), p.Type() == 0)
+	}
+
+	log.Printf("Reading %d packets from wire (zero-copy function call)...", maxPkts)
+	for i := 0; i < maxPkts; i++ {
+		if err := listener.NextPacketFn(func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte) (err error) {
+			log.Printf("Received packet with Payload on `%s` (total len %d): %v (inbound: %v)", devName, totalLen, payload, pktType == 0)
+			return
 		}); err != nil {
-			log.Fatalf("error during capture on `%s`: %s", devName, err)
+			log.Fatalf("error during capture (zero-copy function call) on `%s`: %s", devName, err)
 		}
 	}
 }
