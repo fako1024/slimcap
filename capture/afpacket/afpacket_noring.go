@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"unsafe"
 
 	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/event"
@@ -49,7 +50,7 @@ func NewSource(iface link.Link, options ...Option) (*Source, error) {
 			return nil, fmt.Errorf("failed to set option: %w", err)
 		}
 	}
-	src.buf = make(Packet, src.snapLen)
+	src.buf = make(Packet, src.snapLen+packetHdrOffset)
 
 	// Set socket options
 	if err := setSocketOptions(sd, iface, src.snapLen, src.isPromisc); err != nil {
@@ -67,7 +68,7 @@ func NewSource(iface link.Link, options ...Option) (*Source, error) {
 // NewPacket creates an empty "buffer" package to be used as destination for the NextPacketInto()
 // method. It ensures that a valid packet of appropriate structure / length is created
 func (s *Source) NewPacket() capture.Packet {
-	p := make(Packet, 6+s.snapLen)
+	p := make(Packet, s.snapLen+packetHdrOffset)
 	return &p
 }
 
@@ -83,20 +84,17 @@ func (s *Source) NextPacket(pBuf capture.Packet) (capture.Packet, error) {
 
 	// If no buffer was provided, return a copy of the packet
 	if pBuf == nil {
-		return copyData((s.buf)[:n+6]), nil
+		return copyData((s.buf)[:n+packetHdrOffset]), nil
 	}
 
 	// Assert the correct type and valid length of the buffer
 	data, ok := pBuf.(*Packet)
 	if ok {
 		*data = (*data)[:cap(*data)]
-		if data.Len()+6 < n+6 {
-			return nil, fmt.Errorf("destination buffer / packet too small, need %d bytes, have %d", n+6, data.Len()+6)
-		}
 	} else {
 		return nil, fmt.Errorf("incompatible packet type `%s` for RingBufSource", reflect.TypeOf(pBuf).String())
 	}
-	copy(*data, (s.buf)[:n+6])
+	copy(*data, (s.buf)[:n+packetHdrOffset])
 
 	return data, nil
 }
@@ -120,7 +118,12 @@ func (s *Source) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType c
 		return fmt.Errorf("failed to determine packet type")
 	}
 
-	return fn(s.buf[:n], 0, pktType, s.ipLayerOffset) // TODO: How do we get the total packet size from a plain socket?
+	totalLen, err := s.determineTotalPktLen(s.buf)
+	if err != nil {
+		return err
+	}
+
+	return fn(s.buf[:n], uint32(totalLen), pktType, s.ipLayerOffset) // TODO: How do we get the total packet size from a plain socket?
 }
 
 // Stats returns (and clears) the packet counters of the underlying socket
@@ -163,8 +166,13 @@ func (s *Source) nextPacketInto(data *Packet) (int, error) {
 		return -1, fmt.Errorf("failed to determine packet type")
 	}
 
+	totalLen, err := s.determineTotalPktLen((*data)[6:])
+	if err != nil {
+		return -1, err
+	}
+
 	(*data)[1] = byte(s.ipLayerOffset)
-	// binary.LittleEndian.PutUint32((*data)[2:6], 0) // TODO: How do we get the total packet size from a plain socket (do not use binary package)
+	*(*uint32)(unsafe.Pointer(&(*data)[2])) = uint32(totalLen)
 
 	return n, nil
 }
@@ -173,4 +181,33 @@ func copyData(buf []byte) *Packet {
 	cpBuf := make(Packet, len(buf))
 	copy(cpBuf, buf)
 	return &cpBuf
+}
+
+// Unfortunately there is no ancillary information about the raw / original total size
+// of a packet when receiving it directly from the socket. Consequently we have to determine
+// the packet size from the IP layer (if available) in case there is a snaplen < 65536 set
+func (s *Source) determineTotalPktLen(payload []byte) (uint16, error) {
+
+	// If the snaplen is greater or equal the maximum size of the total length we can
+	// trust the amount of data read into the buffer
+	if s.snapLen >= 65536 {
+		return uint16(len(payload)), nil
+	}
+
+	// In case the packet may have been truncated attempt to extract the total packet
+	// length from the IP layer
+	if int(payload[s.ipLayerOffset]>>4) == 4 {
+		return toUint16(payload[s.ipLayerOffset+2 : s.ipLayerOffset+4]), nil
+	} else if int(payload[s.ipLayerOffset]>>4) == 6 {
+		return toUint16(payload[s.ipLayerOffset+4 : s.ipLayerOffset+6]), nil
+	}
+
+	// TODO: What about jumbo packets? At least for IPv6 such packets carry additional
+	// data in other places of the payload
+	return 0, fmt.Errorf("cannot determine total packet length")
+}
+
+func toUint16(b []byte) uint16 {
+	_ = b[1] // bounds check hint to compiler; see golang.org/issue/14808
+	return uint16(b[1]) | uint16(b[0])<<8
 }

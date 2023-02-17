@@ -16,6 +16,7 @@ var (
 type Stats struct {
 	PacketsReceived int
 	PacketsDropped  int
+	QueueFreezes    int
 }
 
 // PacketType denotes the packet type (indicating traffic direction)

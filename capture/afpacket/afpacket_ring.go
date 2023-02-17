@@ -159,6 +159,7 @@ func (s *RingBufSource) Stats() (capture.Stats, error) {
 	return capture.Stats{
 		PacketsReceived: int(ss.packets),
 		PacketsDropped:  int(ss.drops),
+		QueueFreezes:    int(ss.queueFreezes),
 	}, nil
 }
 

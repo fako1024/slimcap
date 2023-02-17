@@ -15,6 +15,8 @@ import (
 
 const (
 	DefaultSnapLen = (1 << 16) // 64 kiB
+
+	packetHdrOffset = 6 // The header offset / length for storing information about the package
 )
 
 // Packet denotes a packet retrieved via the AF_PACKET ring buffer,
@@ -32,17 +34,17 @@ func (p *Packet) TotalLen() uint32 {
 // Len returns the actual data length of the packet payload as consumed from the wire
 // (may be truncated due to)
 func (p *Packet) Len() int {
-	return len((*p)) - 6
+	return len((*p)) - packetHdrOffset
 }
 
 // Payload returns the raw payload / network layers of the packet
 func (p *Packet) Payload() []byte {
-	return (*p)[6:]
+	return (*p)[packetHdrOffset:]
 }
 
 // IIPLayer returns the IP layer of the packet (up to snaplen, if set)
 func (p *Packet) IPLayer() []byte {
-	return (*p)[(*p)[1]+6:]
+	return (*p)[(*p)[1]+packetHdrOffset:]
 }
 
 // Type denotes the packet type (i.e. the packet direction w.r.t. the interface)
