@@ -1,8 +1,6 @@
 package event
 
 import (
-	"unsafe"
-
 	"golang.org/x/sys/unix"
 )
 
@@ -19,7 +17,7 @@ func Poll(efd EvtFileDescriptor, fd FileDescriptor, events int16) (bool, unix.Er
 			Events: events,
 		},
 	}
-	_, errno := pollBlock(&pollEvents[0], len(pollEvents), nil)
+	errno := pollBlock(&pollEvents[0], len(pollEvents))
 	if errno != 0 {
 		return pollEvents[0].Revents&unix.POLLIN != 0, errno
 	}
@@ -29,11 +27,4 @@ func Poll(efd EvtFileDescriptor, fd FileDescriptor, events int16) (bool, unix.Er
 	}
 
 	return pollEvents[0].Revents&unix.POLLIN != 0, errno
-}
-
-func pollBlock(fds *unix.PollFd, nfds int, timeout *unix.Timespec) (int, unix.Errno) {
-	n, _, e := unix.Syscall6(unix.SYS_PPOLL, uintptr(unsafe.Pointer(fds)),
-		uintptr(nfds), uintptr(unsafe.Pointer(timeout)), 0, 0, 0)
-
-	return int(n), e
 }
