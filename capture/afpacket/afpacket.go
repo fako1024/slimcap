@@ -101,14 +101,18 @@ func setSocketOptions(sd event.FileDescriptor, iface link.Link, snapLen int, pro
 	}
 
 	// Set baseline BPF filters to select only packets with a valid IP header and set the correct snaplen
-	var (
-		p               unix.SockFprog
-		bfpInstructions = iface.LinkType.BPFFilter()(snapLen)
-	)
-	p.Len = uint16(len(bfpInstructions))
-	p.Filter = (*unix.SockFilter)(unsafe.Pointer(&bfpInstructions[0]))
-	if err := setsockopt(sd, unix.SOL_SOCKET, unix.SO_ATTACH_FILTER, unsafe.Pointer(&p), unix.SizeofSockFprog); err != nil {
-		return fmt.Errorf("failed to set BPF filter: %w", err)
+	if bpfFilterFn := iface.LinkType.BPFFilter(); bpfFilterFn != nil {
+		var (
+			p               unix.SockFprog
+			bfpInstructions = bpfFilterFn(snapLen)
+		)
+		p.Len = uint16(len(bfpInstructions))
+		if p.Len != 0 {
+			p.Filter = (*unix.SockFilter)(unsafe.Pointer(&bfpInstructions[0]))
+			if err := setsockopt(sd, unix.SOL_SOCKET, unix.SO_ATTACH_FILTER, unsafe.Pointer(&p), unix.SizeofSockFprog); err != nil {
+				return fmt.Errorf("failed to set BPF filter: %w", err)
+			}
+		}
 	}
 
 	return nil

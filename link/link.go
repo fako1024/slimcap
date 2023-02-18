@@ -17,6 +17,9 @@ const (
 
 	// IPLayerOffsetEthernet denotes the ethernet header offset
 	IPLayerOffsetEthernet = 14
+
+	// LayerOffsetPPPOE denotes the additional offset for PPPOE (session) packets
+	LayerOffsetPPPOE = 8
 )
 
 // LinkType denotes the linux interface type

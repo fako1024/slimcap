@@ -8,12 +8,21 @@ var bpfInstructionsLinkTypeEther = func(snapLen int) []bpf.RawInstruction {
 	if snapLen == 0 {
 		snapLen = defaultSnapLen
 	}
+
+	// LinkTypeEthernet
+	// ether proto 0x0800 || ether proto 0x86DD || (pppoes && (ether proto 0x0800 || ether proto 0x86DD))
+	// Note: The second occurrence of "(ether proto 0x0800 || ether proto 0x86DD)" is not duplicate, it pertains
+	// the layers _after_ an PPPOEs packet
 	return []bpf.RawInstruction{
-		{Op: 40, Jt: 0, Jf: 0, K: 12},
-		{Op: 21, Jt: 1, Jf: 0, K: 2048},
-		{Op: 21, Jt: 0, Jf: 1, K: 34525},
-		{Op: 6, Jt: 0, Jf: 0, K: uint32(snapLen)},
-		{Op: 6, Jt: 0, Jf: 0, K: 0},
+		{Op: 0x28, Jt: 0x0, Jf: 0x0, K: 0xc},
+		{Op: 0x15, Jt: 0x5, Jf: 0x0, K: 0x800},
+		{Op: 0x15, Jt: 0x4, Jf: 0x0, K: 0x86dd},
+		{Op: 0x15, Jt: 0x0, Jf: 0x4, K: 0x8864},
+		{Op: 0x28, Jt: 0x0, Jf: 0x0, K: 0x14},
+		{Op: 0x15, Jt: 0x1, Jf: 0x0, K: 0x21},
+		{Op: 0x15, Jt: 0x0, Jf: 0x1, K: 0x57},
+		{Op: 0x6, Jt: 0x0, Jf: 0x0, K: uint32(snapLen)},
+		{Op: 0x6, Jt: 0x0, Jf: 0x0, K: 0x0},
 	}
 }
 
@@ -21,14 +30,17 @@ var bpfInstructionsLinkTypeRaw = func(snapLen int) []bpf.RawInstruction {
 	if snapLen == 0 {
 		snapLen = defaultSnapLen
 	}
+
+	// LinkTypeSLIP
+	// ether proto 0x0800 || ether proto 0x86DD
 	return []bpf.RawInstruction{
-		{Op: 48, Jt: 0, Jf: 0, K: 0},
-		{Op: 84, Jt: 0, Jf: 0, K: 240},
-		{Op: 21, Jt: 3, Jf: 0, K: 64},
-		{Op: 48, Jt: 0, Jf: 0, K: 0},
-		{Op: 84, Jt: 0, Jf: 0, K: 240},
-		{Op: 21, Jt: 0, Jf: 1, K: 96},
-		{Op: 6, Jt: 0, Jf: 0, K: uint32(snapLen)},
-		{Op: 6, Jt: 0, Jf: 0, K: 0},
+		{Op: 0x30, Jt: 0x0, Jf: 0x0, K: 0x0},
+		{Op: 0x54, Jt: 0x0, Jf: 0x0, K: 0xf0},
+		{Op: 0x15, Jt: 0x3, Jf: 0x0, K: 0x40},
+		{Op: 0x30, Jt: 0x0, Jf: 0x0, K: 0x0},
+		{Op: 0x54, Jt: 0x0, Jf: 0x0, K: 0xf0},
+		{Op: 0x15, Jt: 0x0, Jf: 0x1, K: 0x60},
+		{Op: 0x6, Jt: 0x0, Jf: 0x0, K: uint32(snapLen)},
+		{Op: 0x6, Jt: 0x0, Jf: 0x0, K: 0x0},
 	}
 }
