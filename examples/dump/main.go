@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 
 	"github.com/fako1024/slimcap/capture/afpacket"
@@ -10,14 +11,22 @@ import (
 func main() {
 
 	var (
-		devName = "enp45s0u1u1"
-		maxPkts = 10
+		devName string
+		maxPkts int
 	)
+
+	flag.StringVar(&devName, "d", "", "device / interface to capture on")
+	flag.IntVar(&maxPkts, "n", 10, "maximum number of packets to capture")
+	flag.Parse()
+	if devName == "" {
+		log.Fatal("no interface specified (-d)")
+	}
 
 	link, err := link.New(devName)
 	if err != nil {
 		log.Fatalf("failed to set up link `%s`: %s", devName, err)
 	}
+	log.Printf("Listening on interface `%s`: %+v", link.Name, *link.Interface)
 
 	listener, err := afpacket.NewRingBufSource(link,
 		afpacket.CaptureLength(64),

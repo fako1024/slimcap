@@ -1,11 +1,14 @@
 package link
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"golang.org/x/net/bpf"
 )
@@ -26,9 +29,9 @@ func (l LinkType) IpHeaderOffset() byte {
 	case 1, // ARPHRD_ETHER
 		772: // ARPHRD_LOOPBACK
 		return IPLayerOffsetEthernet
-	case 512: // ARPHRD_PPP (not supported right now, but could probably be done if required)
-		panic("PPP not supported (yet)")
-	case 65534: // ARPHRD_NONE Tunnel / anything else (confirmed: Wireguard, OpenVPN)
+	case 512, // ARPHRD_PPP
+		778,   // ARPHRD_IPGRE
+		65534: // ARPHRD_NONE Tunnel / anything else (confirmed: Wireguard, OpenVPN)
 		return 0
 	}
 
@@ -42,9 +45,9 @@ func (l LinkType) BPFFilter() func(snapLen int) []bpf.RawInstruction {
 	case 1, // ARPHRD_ETHER
 		772: // ARPHRD_LOOPBACK
 		return bpfInstructionsLinkTypeEther
-	case 512: // ARPHRD_PPP (not supported right now, but could probably be done if required)
-		panic("PPP not supported (yet)")
-	case 65534: // ARPHRD_NONE Tunnel / anything else (confirmed: Wireguard, OpenVPN)
+	case 512, // ARPHRD_PPP
+		778,   // ARPHRD_IPGRE
+		65534: // ARPHRD_NONE Tunnel / anything else (confirmed: Wireguard, OpenVPN)
 		return bpfInstructionsLinkTypeRaw
 	}
 
@@ -63,14 +66,23 @@ type Link struct {
 func New(ifName string) (link Link, err error) {
 
 	iface, ierr := net.InterfaceByName(ifName)
-	if err != nil {
+	if ierr != nil {
 		err = ierr
+		return
+	}
+
+	if (iface.Flags & syscall.IFF_UP) == 0 {
+		err = fmt.Errorf("interface `%s` is not up", ifName)
 		return
 	}
 
 	linkType, lerr := getLinkType(ifName)
 	if lerr != nil {
-		err = lerr
+		if errors.Is(lerr, fs.ErrNotExist) {
+			err = fmt.Errorf("interface `%s` does not exist or is unsupported", ifName)
+		} else {
+			err = lerr
+		}
 		return
 	}
 
