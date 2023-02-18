@@ -66,7 +66,7 @@ type Link struct {
 }
 
 // New instantiates a new link / interface
-func New(ifName string) (link Link, err error) {
+func New(ifName string) (link *Link, err error) {
 
 	iface, ierr := net.InterfaceByName(ifName)
 	if ierr != nil {
@@ -89,14 +89,14 @@ func New(ifName string) (link Link, err error) {
 		return
 	}
 
-	return Link{
+	return &Link{
 		LinkType:  linkType,
 		Interface: iface,
 	}, nil
 }
 
 // FindAllLinks retrieves all system network interfaces and their link type
-func FindAllLinks() ([]Link, error) {
+func FindAllLinks() ([]*Link, error) {
 
 	// Retrieve all network interfaces
 	ifaces, err := net.Interfaces()
@@ -105,7 +105,7 @@ func FindAllLinks() ([]Link, error) {
 	}
 
 	// Determine link type for all interfaces
-	var links []Link
+	var links []*Link
 	for i := 0; i < len(ifaces); i++ {
 
 		linkType, err := getLinkType(ifaces[i].Name)
@@ -113,7 +113,7 @@ func FindAllLinks() ([]Link, error) {
 			return nil, fmt.Errorf("failed to determine link type for interface `%s`: %w", ifaces[i].Name, err)
 		}
 
-		links = append(links, Link{
+		links = append(links, &Link{
 			Interface: &ifaces[i],
 			LinkType:  linkType,
 		})

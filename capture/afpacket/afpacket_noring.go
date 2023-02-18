@@ -1,6 +1,7 @@
 package afpacket
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
@@ -19,7 +20,7 @@ type Source struct {
 	ipLayerOffset byte
 	snapLen       int
 	isPromisc     bool
-	link          link.Link
+	link          *link.Link
 
 	buf Packet
 
@@ -27,7 +28,11 @@ type Source struct {
 }
 
 // NewSource instantiates a new AF_PACKET capture source
-func NewSource(iface link.Link, options ...Option) (*Source, error) {
+func NewSource(iface *link.Link, options ...Option) (*Source, error) {
+
+	if iface == nil {
+		return nil, errors.New("nil Link provided")
+	}
 
 	// Setup socket
 	sd, err := setupSocket(iface)
@@ -147,7 +152,7 @@ func (s *Source) Close() error {
 }
 
 // Link returns the underlying link
-func (s *Source) Link() link.Link {
+func (s *Source) Link() *link.Link {
 	return s.link
 }
 

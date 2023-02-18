@@ -161,7 +161,7 @@ func (c *Capture) Run() (err error) {
 	wg := sync.WaitGroup{}
 	for _, iface := range links {
 		wg.Add(1)
-		go func(l link.Link) {
+		go func(l *link.Link) {
 			defer wg.Done()
 
 			for _, skipLink := range skipped {

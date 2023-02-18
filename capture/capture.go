@@ -43,7 +43,7 @@ type Source interface {
 	Stats() (Stats, error)
 
 	// Link returns the underlying link
-	Link() link.Link
+	Link() *link.Link
 
 	// Close stops / closes the capture source
 	Close() error

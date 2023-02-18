@@ -1,6 +1,7 @@
 package afpacket
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
@@ -36,7 +37,7 @@ type RingBufSource struct {
 	snapLen            int
 	blockSize, nBlocks int
 	isPromisc          bool
-	link               link.Link
+	link               *link.Link
 
 	ringBuffer
 
@@ -44,7 +45,11 @@ type RingBufSource struct {
 }
 
 // NewRingBufSource instantiates a new AF_PACKET capture source making use of a ring buffer
-func NewRingBufSource(iface link.Link, options ...Option) (*RingBufSource, error) {
+func NewRingBufSource(iface *link.Link, options ...Option) (*RingBufSource, error) {
+
+	if iface == nil {
+		return nil, errors.New("nil Link provided")
+	}
 
 	// Define new source
 	src := &RingBufSource{
@@ -180,7 +185,7 @@ func (s *RingBufSource) Close() error {
 }
 
 // Link returns the underlying link
-func (s *RingBufSource) Link() link.Link {
+func (s *RingBufSource) Link() *link.Link {
 	return s.link
 }
 

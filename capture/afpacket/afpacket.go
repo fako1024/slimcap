@@ -4,6 +4,7 @@
 package afpacket
 
 import (
+	"errors"
 	"fmt"
 	"unsafe"
 
@@ -52,7 +53,7 @@ func (p *Packet) Type() capture.PacketType {
 	return (*p)[0]
 }
 
-func setupSocket(iface link.Link) (event.FileDescriptor, error) {
+func setupSocket(iface *link.Link) (event.FileDescriptor, error) {
 
 	// Setup socket
 	sd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, htons(unix.ETH_P_ALL))
@@ -71,17 +72,25 @@ func setupSocket(iface link.Link) (event.FileDescriptor, error) {
 	return sd, nil
 }
 
-func getSocketStats(sd event.FileDescriptor) (tPacketStats, error) {
+func getSocketStats(sd event.FileDescriptor) (ss tPacketStats, err error) {
+
+	if sd <= 0 {
+		err = errors.New("invalid socket")
+		return
+	}
 
 	// Retrieve TPacket stats for the socket
-	ss := tPacketStats{}
 	sockLen := unsafe.Sizeof(ss)
-	err := getsockopt(sd, unix.SOL_PACKET, unix.PACKET_STATISTICS, unsafe.Pointer(&ss), uintptr(unsafe.Pointer(&sockLen)))
+	err = getsockopt(sd, unix.SOL_PACKET, unix.PACKET_STATISTICS, unsafe.Pointer(&ss), uintptr(unsafe.Pointer(&sockLen)))
 
-	return ss, err
+	return
 }
 
-func setSocketOptions(sd event.FileDescriptor, iface link.Link, snapLen int, promisc bool) error {
+func setSocketOptions(sd event.FileDescriptor, iface *link.Link, snapLen int, promisc bool) error {
+
+	if sd <= 0 {
+		return errors.New("invalid socket")
+	}
 
 	// Set TPacket version on socket to the configured version
 	if err := unix.SetsockoptInt(sd, unix.SOL_PACKET, unix.PACKET_VERSION, tPacketVersion); err != nil {
@@ -119,6 +128,10 @@ func setSocketOptions(sd event.FileDescriptor, iface link.Link, snapLen int, pro
 }
 
 func setupRingBuffer(sd event.FileDescriptor, tPacketReq tPacketRequest) ([]byte, event.EvtFileDescriptor, error) {
+
+	if sd <= 0 {
+		return nil, -1, errors.New("invalid socket")
+	}
 
 	// Setup event file descriptor used for stopping the capture (we start with that to avoid
 	// having to clean up the ring buffer in case the decriptor can't be created
