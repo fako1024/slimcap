@@ -28,24 +28,39 @@ type Source struct {
 }
 
 // NewSource instantiates a new AF_PACKET capture source
-func NewSource(iface *link.Link, options ...Option) (*Source, error) {
+func NewSource(iface string, options ...Option) (*Source, error) {
 
-	if iface == nil {
-		return nil, errors.New("nil Link provided")
+	if iface == "" {
+		return nil, errors.New("no interface provided")
+	}
+	link, err := link.New(iface)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set up link on %s: %s", iface, err)
+	}
+
+	return NewSourceFromLink(link)
+}
+
+// NewSourceFromLink instantiates a new AF_PACKET capture source taking an existing link instance
+func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
+
+	// Fail if link is not up
+	if !link.IsUp() {
+		return nil, fmt.Errorf("link %s is not up", link.Name)
 	}
 
 	// Setup socket
-	sd, err := setupSocket(iface)
+	sd, err := setupSocket(link)
 	if err != nil {
-		return nil, fmt.Errorf("failed to setup AF_PACKET socket on %s: %w", iface.Name, err)
+		return nil, fmt.Errorf("failed to setup AF_PACKET socket on %s: %w", link.Name, err)
 	}
 
 	// Define new source
 	src := &Source{
 		snapLen:       DefaultSnapLen,
 		socketFD:      sd,
-		ipLayerOffset: iface.LinkType.IpHeaderOffset(),
-		link:          iface,
+		ipLayerOffset: link.LinkType.IpHeaderOffset(),
+		link:          link,
 		Mutex:         sync.Mutex{},
 	}
 
@@ -58,13 +73,13 @@ func NewSource(iface *link.Link, options ...Option) (*Source, error) {
 	src.buf = make(Packet, src.snapLen+packetHdrOffset)
 
 	// Set socket options
-	if err := setSocketOptions(sd, iface, src.snapLen, src.isPromisc); err != nil {
-		return nil, fmt.Errorf("failed to set AF_PACKET socket options on %s: %w", iface.Name, err)
+	if err := setSocketOptions(sd, link, src.snapLen, src.isPromisc); err != nil {
+		return nil, fmt.Errorf("failed to set AF_PACKET socket options on %s: %w", link.Name, err)
 	}
 
 	// Clear socket stats
 	if _, err := getSocketStats(sd); err != nil {
-		return nil, fmt.Errorf("failed to clear AF_PACKET socket stats on %s: %w", iface.Name, err)
+		return nil, fmt.Errorf("failed to clear AF_PACKET socket stats on %s: %w", link.Name, err)
 	}
 
 	return src, nil
@@ -104,7 +119,7 @@ func (s *Source) NextPacket(pBuf capture.Packet) (capture.Packet, error) {
 	return data, nil
 }
 
-// NextIPPacketFn executed the provided function on the next packet received on the wire and only
+// NextIPPacketFn executes the provided function on the next packet received on the wire and only
 // return the ring buffer block to the kernel upon completion of the function. If possible, the
 // operation should provide a zero-copy way of interaction with the payload / metadata.
 func (s *Source) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType capture.PacketType, ipLayerOffset byte) error) error {

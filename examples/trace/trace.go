@@ -170,19 +170,19 @@ func (c *Capture) Run() (err error) {
 				}
 			}
 
-			if (l.Interface.Flags & syscall.IFF_UP) == 0 {
+			if !l.IsUp() {
 				log.Warnf("skipping listener on non-up interface `%s`", l.Name)
 				return
 			}
 
 			var listener capture.Source
 			if c.useRingBuffer {
-				listener, err = afpacket.NewRingBufSource(l)
+				listener, err = afpacket.NewRingBufSourceFromLink(l)
 				if err != nil {
 					log.Errorf("error starting listener (with ring buffer) on `%s`: %s", l.Name, err)
 				}
 			} else {
-				listener, err = afpacket.NewSource(l)
+				listener, err = afpacket.NewSourceFromLink(l)
 				if err != nil {
 					log.Errorf("error starting listener (no ring buffer) on `%s`: %s", l.Name, err)
 				}

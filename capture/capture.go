@@ -34,7 +34,7 @@ type Source interface {
 	// buffer packet can be reused. Otherwise a new Packet of the Source-specific type is allocated.
 	NextPacket(pBuf Packet) (Packet, error)
 
-	// NextIPPacketFn executed the provided function on the next packet received on the wire and only
+	// NextIPPacketFn executes the provided function on the next packet received on the wire and only
 	// return the ring buffer block to the kernel upon completion of the function. If possible, the
 	// operation should provide a zero-copy way of interaction with the payload / metadata.
 	NextPacketFn(func(payload []byte, totalLen uint32, pktType PacketType, ipLayerOffset byte) error) error

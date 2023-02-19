@@ -45,10 +45,26 @@ type RingBufSource struct {
 }
 
 // NewRingBufSource instantiates a new AF_PACKET capture source making use of a ring buffer
-func NewRingBufSource(iface *link.Link, options ...Option) (*RingBufSource, error) {
+func NewRingBufSource(iface string, options ...Option) (*RingBufSource, error) {
 
-	if iface == nil {
-		return nil, errors.New("nil Link provided")
+	if iface == "" {
+		return nil, errors.New("no interface provided")
+	}
+	link, err := link.New(iface)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set up link on %s: %s", iface, err)
+	}
+
+	return NewRingBufSourceFromLink(link)
+}
+
+// NewRingBufSourceFromLink instantiates a new AF_PACKET capture source making use of a ring buffer
+// taking an existing link instance
+func NewRingBufSourceFromLink(link *link.Link, options ...Option) (*RingBufSource, error) {
+
+	// Fail if link is not up
+	if !link.IsUp() {
+		return nil, fmt.Errorf("link %s is not up", link.Name)
 	}
 
 	// Define new source
@@ -56,8 +72,8 @@ func NewRingBufSource(iface *link.Link, options ...Option) (*RingBufSource, erro
 		snapLen:       DefaultSnapLen,
 		blockSize:     tPacketDefaultBlockSize,
 		nBlocks:       tPacketDefaultBlockNr,
-		ipLayerOffset: iface.LinkType.IpHeaderOffset(),
-		link:          iface,
+		ipLayerOffset: link.LinkType.IpHeaderOffset(),
+		link:          link,
 		Mutex:         sync.Mutex{},
 	}
 
@@ -71,29 +87,29 @@ func NewRingBufSource(iface *link.Link, options ...Option) (*RingBufSource, erro
 	var err error
 	src.ringBuffer.tpReq, err = newTPacketRequestForBuffer(src.blockSize, src.nBlocks, src.snapLen)
 	if err != nil {
-		return nil, fmt.Errorf("failed to setup TPacket request on %s: %w", iface.Name, err)
+		return nil, fmt.Errorf("failed to setup TPacket request on %s: %w", link.Name, err)
 	}
 
 	// Setup socket
-	src.socketFD, err = setupSocket(iface)
+	src.socketFD, err = setupSocket(link)
 	if err != nil {
-		return nil, fmt.Errorf("failed to setup AF_PACKET socket on %s: %w", iface.Name, err)
+		return nil, fmt.Errorf("failed to setup AF_PACKET socket on %s: %w", link.Name, err)
 	}
 
 	// Set socket options
-	if err := setSocketOptions(src.socketFD, iface, src.snapLen, src.isPromisc); err != nil {
-		return nil, fmt.Errorf("failed to set AF_PACKET socket options on %s: %w", iface.Name, err)
+	if err := setSocketOptions(src.socketFD, link, src.snapLen, src.isPromisc); err != nil {
+		return nil, fmt.Errorf("failed to set AF_PACKET socket options on %s: %w", link.Name, err)
 	}
 
 	// Setup ring buffer
 	src.ringBuffer.ring, src.eventFD, err = setupRingBuffer(src.socketFD, src.tpReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to setup AF_PACKET mmap'ed ring buffer %s: %w", iface.Name, err)
+		return nil, fmt.Errorf("failed to setup AF_PACKET mmap'ed ring buffer %s: %w", link.Name, err)
 	}
 
 	// Clear socket stats
 	if _, err := getSocketStats(src.socketFD); err != nil {
-		return nil, fmt.Errorf("failed to clear AF_PACKET socket stats on %s: %w", iface.Name, err)
+		return nil, fmt.Errorf("failed to clear AF_PACKET socket stats on %s: %w", link.Name, err)
 	}
 
 	return src, nil
@@ -140,7 +156,7 @@ func (s *RingBufSource) NextPacket(pBuf capture.Packet) (capture.Packet, error) 
 	return data, nil
 }
 
-// NextIPPacketFn executed the provided function on the next packet received on the wire and only
+// NextIPPacketFn executes the provided function on the next packet received on the wire and only
 // return the ring buffer block to the kernel upon completion of the function. If possible, the
 // operation should provide a zero-copy way of interaction with the payload / metadata.
 func (s *RingBufSource) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType capture.PacketType, ipLayerOffset byte) error) error {

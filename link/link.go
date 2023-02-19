@@ -95,6 +95,11 @@ func New(ifName string) (link *Link, err error) {
 	}, nil
 }
 
+// IsUp returns if a link / interface is up
+func (l *Link) IsUp() bool {
+	return !(l.Flags&syscall.IFF_UP == 0)
+}
+
 // FindAllLinks retrieves all system network interfaces and their link type
 func FindAllLinks() ([]*Link, error) {
 

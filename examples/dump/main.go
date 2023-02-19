@@ -5,7 +5,6 @@ import (
 	"log"
 
 	"github.com/fako1024/slimcap/capture/afpacket"
-	"github.com/fako1024/slimcap/link"
 )
 
 func main() {
@@ -22,13 +21,7 @@ func main() {
 		log.Fatal("no interface specified (-d)")
 	}
 
-	link, err := link.New(devName)
-	if err != nil {
-		log.Fatalf("failed to set up link `%s`: %s", devName, err)
-	}
-	log.Printf("Listening on interface `%s`: %+v", link.Name, *link.Interface)
-
-	listener, err := afpacket.NewRingBufSource(link,
+	listener, err := afpacket.NewRingBufSource(devName,
 		afpacket.CaptureLength(64),
 		afpacket.BufferSize((1<<20), 4),
 		afpacket.Promiscuous(false),
@@ -41,6 +34,7 @@ func main() {
 			log.Fatalf("failed to close listener or `%s`: %s", devName, err)
 		}
 	}()
+	log.Printf("Listening on interface `%s`: %+v", listener.Link().Name, listener.Link().Interface)
 
 	log.Printf("Reading %d packets from wire (copy operation)...", maxPkts)
 	for i := 0; i < maxPkts; i++ {
