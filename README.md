@@ -25,25 +25,27 @@ go get -u github.com/fako1024/slimcap
 package main
 
 import (
+	"flag"
 	"log"
 
 	"github.com/fako1024/slimcap/capture/afpacket"
-	"github.com/fako1024/slimcap/link"
 )
 
 func main() {
 
 	var (
-		devName = "eth0"
-		maxPkts = 10
+		devName string
+		maxPkts int
 	)
 
-	link, err := link.New(devName)
-	if err != nil {
-		log.Fatalf("failed to set up link `%s`: %s", devName, err)
+	flag.StringVar(&devName, "d", "", "device / interface to capture on")
+	flag.IntVar(&maxPkts, "n", 10, "maximum number of packets to capture")
+	flag.Parse()
+	if devName == "" {
+		log.Fatal("no interface specified (-d)")
 	}
 
-	listener, err := afpacket.NewRingBufSource(link,
+	listener, err := afpacket.NewRingBufSource(devName,
 		afpacket.CaptureLength(64),
 		afpacket.BufferSize((1<<20), 4),
 		afpacket.Promiscuous(false),
@@ -56,6 +58,7 @@ func main() {
 			log.Fatalf("failed to close listener or `%s`: %s", devName, err)
 		}
 	}()
+	log.Printf("Listening on interface `%s`: %+v", listener.Link().Name, listener.Link().Interface)
 
 	log.Printf("Reading %d packets from wire (copy operation)...", maxPkts)
 	for i := 0; i < maxPkts; i++ {
@@ -85,4 +88,5 @@ func main() {
 		}
 	}
 }
+
 ```
