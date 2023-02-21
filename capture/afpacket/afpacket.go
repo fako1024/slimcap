@@ -44,8 +44,8 @@ func (p *Packet) Payload() []byte {
 }
 
 // IIPLayer returns the IP layer of the packet (up to snaplen, if set)
-func (p *Packet) IPLayer() []byte {
-	return (*p)[(*p)[1]+packetHdrOffset:]
+func (p *Packet) IPLayer() capture.IPLayer {
+	return capture.IPLayer((*p)[(*p)[1]+packetHdrOffset:])
 }
 
 // Type denotes the packet type (i.e. the packet direction w.r.t. the interface)

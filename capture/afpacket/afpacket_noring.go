@@ -38,7 +38,7 @@ func NewSource(iface string, options ...Option) (*Source, error) {
 		return nil, fmt.Errorf("failed to set up link on %s: %s", iface, err)
 	}
 
-	return NewSourceFromLink(link)
+	return NewSourceFromLink(link, options...)
 }
 
 // NewSourceFromLink instantiates a new AF_PACKET capture source taking an existing link instance

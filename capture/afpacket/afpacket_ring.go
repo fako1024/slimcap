@@ -55,7 +55,7 @@ func NewRingBufSource(iface string, options ...Option) (*RingBufSource, error) {
 		return nil, fmt.Errorf("failed to set up link on %s: %s", iface, err)
 	}
 
-	return NewRingBufSourceFromLink(link)
+	return NewRingBufSourceFromLink(link, options...)
 }
 
 // NewRingBufSourceFromLink instantiates a new AF_PACKET capture source making use of a ring buffer
@@ -130,8 +130,10 @@ func (s *RingBufSource) NextPacket(pBuf capture.Packet) (capture.Packet, error) 
 	if err := s.nextPacket(); err != nil {
 		return nil, err
 	}
-	var data *Packet
-
+	var (
+		data    *Packet
+		snapLen = int(s.curTPacketHeader.snapLen())
+	)
 	// If a buffer was provided, assert the correct type and valid length
 	// Otherwise, allocate a new Packet
 	if pBuf != nil {
@@ -142,7 +144,7 @@ func (s *RingBufSource) NextPacket(pBuf capture.Packet) (capture.Packet, error) 
 			return nil, fmt.Errorf("incompatible packet type `%s` for RingBufSource", reflect.TypeOf(pBuf).String())
 		}
 	} else {
-		p := make(Packet, 6+s.curTPacketHeader.snapLen())
+		p := make(Packet, packetHdrOffset+snapLen)
 		data = &p
 	}
 
@@ -151,7 +153,9 @@ func (s *RingBufSource) NextPacket(pBuf capture.Packet) (capture.Packet, error) 
 	(*data)[1] = s.ipLayerOffset
 	s.curTPacketHeader.pktLenPut((*data)[2:6])
 	s.curTPacketHeader.payloadCopyPut((*data)[6:])
-	*data = (*data)[:6+s.curTPacketHeader.snapLen()]
+	if snapLen+packetHdrOffset < len(*data) {
+		*data = (*data)[:packetHdrOffset+snapLen]
+	}
 
 	return data, nil
 }
@@ -205,6 +209,8 @@ func (s *RingBufSource) Link() *link.Link {
 	return s.link
 }
 
+var used int
+
 func (s *RingBufSource) nextPacket() error {
 
 	// If the current TPacketHeader does not contain any more packets (or is uninitialized)
@@ -225,7 +231,11 @@ fetch:
 			}
 
 			if s.curTPacketHeader.getStatus()&tPacketStatusCopy != 0 {
+				if used != int(s.curTPacketHeader.nPkts()) {
+					fmt.Println("WUT (after runaway packet)?", used, s.curTPacketHeader.nPkts())
+				}
 				s.curTPacketHeader.setStatus(tPacketStatusKernel)
+				used = 0
 				s.offset = (s.offset + 1) % int(s.tpReq.frameNr)
 				s.curTPacketHeader = s.nextTPacketHeader()
 
@@ -240,15 +250,32 @@ fetch:
 		// If there is no next offset, release the TPacketHeader to the kernel and fetch a new one
 		nextPos := s.curTPacketHeader.nextOffset()
 		if nextPos == 0 {
+			if used != int(s.curTPacketHeader.nPkts()) {
+				fmt.Println("WUT (after resetting)?", used, s.curTPacketHeader.nPkts())
+			}
 			s.curTPacketHeader.setStatus(tPacketStatusKernel)
+			used = 0
 			s.offset = (s.offset + 1) % int(s.tpReq.blockNr)
 			s.curTPacketHeader = nil
 			goto fetch
 		}
 
 		// Update position of next packet
+		if nextPos > 2048 {
+			fmt.Println("unexpectedly large next pos, will probably fail horribly", nextPos)
+		}
 		s.curTPacketHeader.ppos += nextPos
 	}
 
+	if s.curTPacketHeader.ppos > uint32(s.blockSize) {
+		fmt.Println("exceeding block size")
+	}
+
+	if s.curTPacketHeader.pktLen() == 0 {
+		fmt.Println("skipping empty TPacketHeader, please check if anything weird is happening in your application !!! Info:", s.curTPacketHeader.ppos, "/", s.blockSize, s.curTPacketHeader.mac(), s.curTPacketHeader.packetType(), s.curTPacketHeader.nextOffset())
+		goto fetch
+	}
+
+	used++
 	return nil
 }

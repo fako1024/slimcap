@@ -1,9 +1,14 @@
 package capture
 
 import (
+	"encoding/binary"
 	"errors"
+	"fmt"
+	"net"
 
 	"github.com/fako1024/slimcap/link"
+	"golang.org/x/net/ipv4"
+	"golang.org/x/net/ipv6"
 )
 
 var (
@@ -21,6 +26,48 @@ type Stats struct {
 
 // PacketType denotes the packet type (indicating traffic direction)
 type PacketType = byte
+
+// IPLayer denotes the subset of bytes representing an IP layer
+type IPLayer []byte
+
+// String returns a human-readable string representation of the packet IP layer
+func (i IPLayer) String() (res string) {
+
+	ipLayerType := i[0] >> 4
+	var (
+		sport, dport uint16
+	)
+
+	if ipLayerType == 4 {
+		protocol := i[9]
+		if protocol == 6 || protocol == 17 {
+			dport = binary.BigEndian.Uint16(i[ipv4.HeaderLen+2 : ipv4.HeaderLen+4])
+			sport = binary.BigEndian.Uint16(i[ipv4.HeaderLen : ipv4.HeaderLen+2])
+		}
+		return fmt.Sprintf("%s:%d => %s:%d (proto: %d)",
+			net.IP(i[12:16]).String(),
+			sport,
+			net.IP(i[16:20]).String(),
+			dport,
+			protocol,
+		)
+	} else if ipLayerType == 6 {
+		protocol := i[6]
+		if protocol == 6 || protocol == 17 {
+			dport = binary.BigEndian.Uint16(i[ipv6.HeaderLen+2 : ipv6.HeaderLen+4])
+			sport = binary.BigEndian.Uint16(i[ipv6.HeaderLen : ipv6.HeaderLen+2])
+		}
+		return fmt.Sprintf("%s:%d => %s:%d (proto: %d)",
+			net.IP(i[8:24]).String(),
+			sport,
+			net.IP(i[24:40]).String(),
+			dport,
+			protocol,
+		)
+	}
+
+	return fmt.Sprintf("unknown IP layer type (%d)", ipLayerType)
+}
 
 // Source denotes a generic packet capture source
 type Source interface {
@@ -63,7 +110,7 @@ type Packet interface {
 	Payload() []byte
 
 	// IIPLayer returns the IP layer of the packet (up to snaplen, if set)
-	IPLayer() []byte
+	IPLayer() IPLayer
 
 	// Type denotes the packet type (i.e. the packet direction w.r.t. the interface)
 	Type() PacketType
