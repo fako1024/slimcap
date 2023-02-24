@@ -124,6 +124,10 @@ func (s *Source) NextPacket(pBuf capture.Packet) (capture.Packet, error) {
 // operation should provide a zero-copy way of interaction with the payload / metadata.
 func (s *Source) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType capture.PacketType, ipLayerOffset byte) error) error {
 
+	if s.socketFD == 0 {
+		return errors.New("cannot NextPacketFn() on closed capture source")
+	}
+
 	// Receive a packet from the write
 	n, sockAddr, err := unix.Recvfrom(s.socketFD, s.buf, 0)
 	if err != nil {
@@ -163,7 +167,24 @@ func (s *Source) Stats() (capture.Stats, error) {
 
 // Close stops / closes the capture source
 func (s *Source) Close() error {
-	return unix.Close(s.socketFD)
+	if err := unix.Close(s.socketFD); err != nil {
+		return err
+	}
+
+	s.socketFD = 0
+
+	return nil
+}
+
+// Free releases any pending resources from the capture source (must be called after Close())
+func (s *Source) Free() error {
+	if s.socketFD != 0 {
+		return errors.New("cannot call Free() on open capture source, call Close() first")
+	}
+
+	s.buf = nil
+
+	return nil
 }
 
 // Link returns the underlying link
@@ -172,6 +193,10 @@ func (s *Source) Link() *link.Link {
 }
 
 func (s *Source) nextPacketInto(data *Packet) (int, error) {
+
+	if s.socketFD == 0 {
+		return -1, errors.New("cannot nextPacketInto() on closed capture source")
+	}
 
 	// Receive a packet from the write
 	n, sockAddr, err := unix.Recvfrom(s.socketFD, (*data)[6:], 0)

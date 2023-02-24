@@ -94,6 +94,9 @@ type Source interface {
 
 	// Close stops / closes the capture source
 	Close() error
+
+	// Free releases any pending resources from the capture source (must be called after Close())
+	Free() error
 }
 
 // Packet denotes a generic packet capture from an underlying Source. The interface ensures

@@ -203,6 +203,7 @@ func (s *RingBufSource) Close() error {
 	return nil
 }
 
+// Free releases any pending resources from the capture source (must be called after Close())
 func (s *RingBufSource) Free() error {
 	if s.socketFD != 0 {
 		return errors.New("cannot call Free() on open capture source, call Close() first")
