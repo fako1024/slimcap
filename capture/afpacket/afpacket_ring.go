@@ -246,7 +246,7 @@ fetch:
 
 			if s.curTPacketHeader.getStatus()&tPacketStatusCopy != 0 {
 				if s.curTPacketHeader.nPktsUsed != s.curTPacketHeader.nPkts() {
-					fmt.Println("WUT (after runaway packet)?", s.curTPacketHeader.nPktsUsed, s.curTPacketHeader.nPkts())
+					fmt.Println(s.link.Name, "WUT (after runaway packet)?", s.curTPacketHeader.nPktsUsed, s.curTPacketHeader.nPkts())
 				}
 				s.curTPacketHeader.setStatus(tPacketStatusKernel)
 				s.offset = (s.offset + 1) % int(s.tpReq.frameNr)
@@ -264,7 +264,7 @@ fetch:
 		nextPos := s.curTPacketHeader.nextOffset()
 		if nextPos == 0 {
 			if s.curTPacketHeader.nPktsUsed != s.curTPacketHeader.nPkts() {
-				fmt.Println("WUT (after resetting)?", s.curTPacketHeader.nPktsUsed, s.curTPacketHeader.nPkts())
+				fmt.Println(s.link.Name, "WUT (after resetting)?", s.curTPacketHeader.nPktsUsed, s.curTPacketHeader.nPkts())
 			}
 			s.curTPacketHeader.setStatus(tPacketStatusKernel)
 			s.offset = (s.offset + 1) % int(s.tpReq.blockNr)
@@ -274,17 +274,17 @@ fetch:
 
 		// Update position of next packet
 		if nextPos > 2048 {
-			fmt.Println("unexpectedly large next pos, will probably fail horribly", nextPos)
+			fmt.Println(s.link.Name, "unexpectedly large next pos, will probably fail horribly", nextPos)
 		}
 		s.curTPacketHeader.ppos += nextPos
 	}
 
 	if s.curTPacketHeader.ppos > uint32(s.blockSize) {
-		fmt.Println("exceeding block size")
+		fmt.Println(s.link.Name, "exceeding block size")
 	}
 
 	if s.curTPacketHeader.pktLen() == 0 {
-		fmt.Println("skipping empty TPacketHeader, please check if anything weird is happening in your application !!! Info:", s.curTPacketHeader.ppos, "/", s.blockSize, s.curTPacketHeader.mac(), s.curTPacketHeader.packetType(), s.curTPacketHeader.nextOffset())
+		fmt.Println(s.link.Name, "skipping empty TPacketHeader, please check if anything weird is happening in your application !!! Info:", s.curTPacketHeader.ppos, "/", s.blockSize, s.curTPacketHeader.mac(), s.curTPacketHeader.packetType(), s.curTPacketHeader.nextOffset())
 		goto fetch
 	}
 
