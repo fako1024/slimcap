@@ -194,14 +194,25 @@ func (s *RingBufSource) Close() error {
 		return err
 	}
 
-	if s.ring != nil {
-		if err := unix.Munmap(s.ring); err != nil {
-			return err
-		}
+	if err := unix.Close(s.socketFD); err != nil {
+		return err
 	}
-	s.ring = nil
 
-	return unix.Close(s.socketFD)
+	s.socketFD = 0
+
+	return nil
+}
+
+func (s *RingBufSource) Free() error {
+	if s.socketFD != 0 {
+		return errors.New("cannot call Free() on open capture source, call Close() first")
+	}
+
+	if s.ring != nil {
+		return unix.Munmap(s.ring)
+	}
+
+	return nil
 }
 
 // Link returns the underlying link
@@ -209,9 +220,11 @@ func (s *RingBufSource) Link() *link.Link {
 	return s.link
 }
 
-var used int
-
 func (s *RingBufSource) nextPacket() error {
+
+	if s.socketFD == 0 {
+		return errors.New("cannot nextPacket() on closed capture source")
+	}
 
 	// If the current TPacketHeader does not contain any more packets (or is uninitialized)
 	// fetch a new one from the ring buffer
@@ -231,11 +244,10 @@ fetch:
 			}
 
 			if s.curTPacketHeader.getStatus()&tPacketStatusCopy != 0 {
-				if used != int(s.curTPacketHeader.nPkts()) {
-					fmt.Println("WUT (after runaway packet)?", used, s.curTPacketHeader.nPkts())
+				if s.curTPacketHeader.nPktsUsed != s.curTPacketHeader.nPkts() {
+					fmt.Println("WUT (after runaway packet)?", s.curTPacketHeader.nPktsUsed, s.curTPacketHeader.nPkts())
 				}
 				s.curTPacketHeader.setStatus(tPacketStatusKernel)
-				used = 0
 				s.offset = (s.offset + 1) % int(s.tpReq.frameNr)
 				s.curTPacketHeader = s.nextTPacketHeader()
 
@@ -250,11 +262,10 @@ fetch:
 		// If there is no next offset, release the TPacketHeader to the kernel and fetch a new one
 		nextPos := s.curTPacketHeader.nextOffset()
 		if nextPos == 0 {
-			if used != int(s.curTPacketHeader.nPkts()) {
-				fmt.Println("WUT (after resetting)?", used, s.curTPacketHeader.nPkts())
+			if s.curTPacketHeader.nPktsUsed != s.curTPacketHeader.nPkts() {
+				fmt.Println("WUT (after resetting)?", s.curTPacketHeader.nPktsUsed, s.curTPacketHeader.nPkts())
 			}
 			s.curTPacketHeader.setStatus(tPacketStatusKernel)
-			used = 0
 			s.offset = (s.offset + 1) % int(s.tpReq.blockNr)
 			s.curTPacketHeader = nil
 			goto fetch
@@ -276,6 +287,6 @@ fetch:
 		goto fetch
 	}
 
-	used++
+	s.curTPacketHeader.nPktsUsed++
 	return nil
 }

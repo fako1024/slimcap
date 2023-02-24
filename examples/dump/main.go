@@ -27,11 +27,14 @@ func main() {
 		afpacket.Promiscuous(false),
 	)
 	if err != nil {
-		log.Fatalf("failed to start listener or `%s`: %s", devName, err)
+		log.Fatalf("failed to start listener on `%s`: %s", devName, err)
 	}
 	defer func() {
 		if err := listener.Close(); err != nil {
-			log.Fatalf("failed to close listener or `%s`: %s", devName, err)
+			log.Fatalf("failed to close listener on `%s`: %s", devName, err)
+		}
+		if err := listener.Free(); err != nil {
+			log.Fatalf("failed to free listener resources on `%s`: %s", devName, err)
 		}
 	}()
 	log.Printf("Listening on interface `%s`: %+v", listener.Link().Name, listener.Link().Interface)

@@ -83,8 +83,9 @@ func (t tPacketRequest) blockSizeNr() int {
 // tPacketHeader denotes the V3 tpacket_hdr structure, c.f.
 // https://github.com/torvalds/linux/blob/master/include/uapi/linux/if_packet.h
 type tPacketHeader struct {
-	data []byte
-	ppos uint32
+	data      []byte
+	ppos      uint32
+	nPktsUsed uint32
 }
 
 // / -> Block Descriptor
