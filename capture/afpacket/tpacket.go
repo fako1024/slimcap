@@ -1,6 +1,7 @@
 package afpacket
 
 import (
+	"fmt"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -41,8 +42,11 @@ type tPacketRequest struct {
 func newTPacketRequestForBuffer(blockSize, nBlocks, snapLen int) (req tPacketRequest, err error) {
 
 	// The block size is the overall length of a block's continuous memory buffer. It should be chosen
-	// to be a power of two (otherwise all excess memory would be wasted),
-	blockSize = pageSizeAlign(blockSize)
+	// to be a power of two (otherwise all excess memory would be wasted).
+	if blockSize != pageSizeAlign(blockSize) {
+		err = fmt.Errorf("block size %d not aligned to page size", blockSize)
+		return
+	}
 
 	// The number of blocks defines how many ring buffer blocks (i.e. batches of frames / packets)
 	// are created. This probably shouldn't be too high in order to minimize the number of syscalls
@@ -64,7 +68,6 @@ func newTPacketRequest(blockSize, blockNr, frameSize int) (req tPacketRequest, e
 	// frameSize must be greater than tPacketHeaderLen
 	// frameSize must be a multiple of tPacketAlignment
 	// frameNr  must be exactly (blockSize*blockNr) / frameSize
-
 	req = tPacketRequest{
 		blockSize:      uint32(blockSize),
 		blockNr:        uint32(blockNr),

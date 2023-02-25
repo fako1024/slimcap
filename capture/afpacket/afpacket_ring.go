@@ -198,14 +198,14 @@ func (s *RingBufSource) Close() error {
 		return err
 	}
 
-	s.socketFD = 0
+	s.socketFD = -1
 
 	return nil
 }
 
 // Free releases any pending resources from the capture source (must be called after Close())
 func (s *RingBufSource) Free() error {
-	if s.socketFD != 0 {
+	if s.socketFD >= 0 {
 		return errors.New("cannot call Free() on open capture source, call Close() first")
 	}
 
@@ -223,8 +223,10 @@ func (s *RingBufSource) Link() *link.Link {
 
 func (s *RingBufSource) nextPacket() error {
 
-	if s.socketFD == 0 {
-		return errors.New("cannot nextPacket() on closed capture source")
+	// If the socket is invalid the capture is obviously closed and we return the respective
+	// error
+	if s.socketFD < 0 {
+		return capture.ErrCaptureStopped
 	}
 
 	// If the current TPacketHeader does not contain any more packets (or is uninitialized)
@@ -279,12 +281,12 @@ fetch:
 		s.curTPacketHeader.ppos += nextPos
 	}
 
-	if s.curTPacketHeader.ppos > uint32(s.blockSize) {
+	if s.curTPacketHeader.ppos > s.tpReq.blockSize {
 		fmt.Println(s.link.Name, "exceeding block size")
 	}
 
 	if s.curTPacketHeader.pktLen() == 0 {
-		fmt.Println(s.link.Name, "skipping empty TPacketHeader, please check if anything weird is happening in your application !!! Info:", s.curTPacketHeader.ppos, "/", s.blockSize, s.curTPacketHeader.mac(), s.curTPacketHeader.packetType(), s.curTPacketHeader.nextOffset())
+		fmt.Println(s.link.Name, "skipping empty TPacketHeader, please check if anything weird is happening in your application !!! Info:", s.curTPacketHeader.ppos, "/", s.tpReq.blockSize, s.curTPacketHeader.mac(), s.curTPacketHeader.packetType(), s.curTPacketHeader.nextOffset())
 		goto fetch
 	}
 

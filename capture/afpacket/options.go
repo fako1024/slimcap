@@ -27,7 +27,7 @@ func CaptureLength(snapLen int) Option {
 func BufferSize(blockSize, nBlocks int) Option {
 	return func(s capture.Source) (err error) {
 		if x, ok := s.(*RingBufSource); ok {
-			x.blockSize = blockSize
+			x.blockSize = pageSizeAlign(blockSize)
 			x.nBlocks = nBlocks
 		} else {
 			err = errors.New("option `BufferSize()` not supported for this capture source")
