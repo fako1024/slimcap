@@ -104,11 +104,13 @@ func NewRingBufSourceFromLink(link *link.Link, options ...Option) (*RingBufSourc
 	// Setup ring buffer
 	src.ringBuffer.ring, src.eventFD, err = setupRingBuffer(src.socketFD, src.tpReq)
 	if err != nil {
+		unix.Close(src.socketFD)
 		return nil, fmt.Errorf("failed to setup AF_PACKET mmap'ed ring buffer %s: %w", link.Name, err)
 	}
 
 	// Clear socket stats
 	if _, err := getSocketStats(src.socketFD); err != nil {
+		unix.Close(src.socketFD)
 		return nil, fmt.Errorf("failed to clear AF_PACKET socket stats on %s: %w", link.Name, err)
 	}
 
@@ -190,6 +192,10 @@ func (s *RingBufSource) Stats() (capture.Stats, error) {
 
 // Close stops / closes the capture source
 func (s *RingBufSource) Close() error {
+	if s == nil || s.eventFD < 0 || s.socketFD < 0 {
+		return errors.New("cannot call Close() on nil / closed capture source")
+	}
+
 	if err := s.eventFD.Stop(); err != nil {
 		return err
 	}
@@ -205,6 +211,9 @@ func (s *RingBufSource) Close() error {
 
 // Free releases any pending resources from the capture source (must be called after Close())
 func (s *RingBufSource) Free() error {
+	if s == nil {
+		return errors.New("cannot call Free() on nil capture source")
+	}
 	if s.socketFD >= 0 {
 		return errors.New("cannot call Free() on open capture source, call Close() first")
 	}

@@ -167,6 +167,10 @@ func (s *Source) Stats() (capture.Stats, error) {
 
 // Close stops / closes the capture source
 func (s *Source) Close() error {
+	if s == nil || s.socketFD < 0 {
+		return errors.New("cannot call Close() on nil / closed capture source")
+	}
+
 	if err := unix.Close(s.socketFD); err != nil {
 		return err
 	}
@@ -178,6 +182,9 @@ func (s *Source) Close() error {
 
 // Free releases any pending resources from the capture source (must be called after Close())
 func (s *Source) Free() error {
+	if s == nil {
+		return errors.New("cannot call Free() on nil capture source")
+	}
 	if s.socketFD != 0 {
 		return errors.New("cannot call Free() on open capture source, call Close() first")
 	}

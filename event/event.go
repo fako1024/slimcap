@@ -26,6 +26,7 @@ func NewEvtFileDescriptor() (EvtFileDescriptor, error) {
 
 // Stop sends a STOP event via the event file descriptor
 func (e EvtFileDescriptor) Stop() error {
+	fmt.Println(int(e))
 	n, err := unix.Write(int(e), incrementBytes)
 	if err != nil {
 		return fmt.Errorf("failed to send STOP event: %w", err)
