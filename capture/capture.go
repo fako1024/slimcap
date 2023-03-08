@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"unsafe"
 
 	"github.com/fako1024/slimcap/link"
 	"golang.org/x/net/ipv4"
@@ -12,6 +13,9 @@ import (
 )
 
 var (
+
+	// PacketHdrOffset denotes the header offset / length for storing information about the packet
+	PacketHdrOffset = 6
 
 	// ErrCaptureStopped denotes that the capture was stopped
 	ErrCaptureStopped error = errors.New("capture was stopped")
@@ -29,6 +33,22 @@ type PacketType = byte
 
 // IPLayer denotes the subset of bytes representing an IP layer
 type IPLayer []byte
+
+// Type returns the IP layer type (e.g. IPv4 / IPv6)
+func (i IPLayer) Type() byte {
+	return i[0] >> 4
+}
+
+// Protocol returns the IP layer protocol
+func (i IPLayer) Protocol() byte {
+	if ipLayerType := i.Type(); ipLayerType == 4 {
+		return i[9]
+	} else if ipLayerType == 6 {
+		return i[6]
+	}
+
+	return 0x0
+}
 
 // String returns a human-readable string representation of the packet IP layer
 func (i IPLayer) String() (res string) {
@@ -99,22 +119,46 @@ type Source interface {
 	Free() error
 }
 
-// Packet denotes a generic packet capture from an underlying Source. The interface ensures
-// interoperability and allows to implement source-specific handlers for the respective methods
-type Packet interface {
+// Packet denotes a packet retrieved via the AF_PACKET ring buffer,
+// [Fulfils the capture.Packet interface]
+// [0:1] - Packet Type
+// [1:2] - IP Layer Offset
+// [2:6] - Total packet length
+type Packet []byte
 
-	// TotalLen returnsthe total packet length, including all headers
-	TotalLen() uint32
+// NewIPPacket instantiates a new IP packet from a given payload and packet type / length
+func NewIPPacket(payload []byte, pktType PacketType, totalLen int) (res Packet) {
+	res = make(Packet, len(payload)+PacketHdrOffset)
 
-	// Len returns the actual data length of the packet as consumed from the wire
-	Len() int
+	res[0] = pktType
+	*(*uint32)(unsafe.Pointer(&res[2])) = uint32(totalLen)
+	copy(res[PacketHdrOffset:], payload)
 
-	// IPLayer returns the raw payload of the packet (up to snaplen, if set), including all received layers
-	Payload() []byte
+	return
+}
 
-	// IIPLayer returns the IP layer of the packet (up to snaplen, if set)
-	IPLayer() IPLayer
+// TotalLen returnsthe total packet length, including all headers
+func (p *Packet) TotalLen() uint32 {
+	return *(*uint32)(unsafe.Pointer(&(*p)[2]))
+}
 
-	// Type denotes the packet type (i.e. the packet direction w.r.t. the interface)
-	Type() PacketType
+// Len returns the actual data length of the packet payload as consumed from the wire
+// (may be truncated due to)
+func (p *Packet) Len() int {
+	return len((*p)) - PacketHdrOffset
+}
+
+// Payload returns the raw payload / network layers of the packet
+func (p *Packet) Payload() []byte {
+	return (*p)[PacketHdrOffset:]
+}
+
+// IIPLayer returns the IP layer of the packet (up to snaplen, if set)
+func (p *Packet) IPLayer() IPLayer {
+	return IPLayer((*p)[int((*p)[1])+PacketHdrOffset:])
+}
+
+// Type denotes the packet type (i.e. the packet direction w.r.t. the interface)
+func (p *Packet) Type() PacketType {
+	return (*p)[0]
 }
