@@ -3,7 +3,6 @@ package afpacket
 import (
 	"errors"
 	"fmt"
-	"reflect"
 	"sync"
 
 	"github.com/fako1024/slimcap/capture"
@@ -120,8 +119,8 @@ func NewRingBufSourceFromLink(link *link.Link, options ...Option) (*RingBufSourc
 // NewPacket creates an empty "buffer" package to be used as destination for the NextPacketInto()
 // method. It ensures that a valid packet of appropriate structure / length is created
 func (s *RingBufSource) NewPacket() capture.Packet {
-	p := make(Packet, 6+s.snapLen)
-	return &p
+	p := make(capture.Packet, 6+s.snapLen)
+	return p
 }
 
 // NextPacket receives the next packet from the wire and returns it. The operation is blocking. In
@@ -133,30 +132,25 @@ func (s *RingBufSource) NextPacket(pBuf capture.Packet) (capture.Packet, error) 
 		return nil, err
 	}
 	var (
-		data    *Packet
+		data    capture.Packet
 		snapLen = int(s.curTPacketHeader.snapLen())
 	)
-	// If a buffer was provided, assert the correct type and valid length
+
+	// If a buffer was provided, et the correct length of the buffer and populate it
 	// Otherwise, allocate a new Packet
 	if pBuf != nil {
-		var ok bool
-		if data, ok = pBuf.(*Packet); ok {
-			*data = (*data)[:cap(*data)]
-		} else {
-			return nil, fmt.Errorf("incompatible packet type `%s` for RingBufSource", reflect.TypeOf(pBuf).String())
-		}
+		data = pBuf[:cap(pBuf)]
 	} else {
-		p := make(Packet, packetHdrOffset+snapLen)
-		data = &p
+		data = make(capture.Packet, capture.PacketHdrOffset+snapLen)
 	}
 
 	// Populate the packet
-	(*data)[0] = s.curTPacketHeader.packetType()
-	(*data)[1] = s.ipLayerOffset
-	s.curTPacketHeader.pktLenPut((*data)[2:6])
-	s.curTPacketHeader.payloadCopyPut((*data)[6:])
-	if snapLen+packetHdrOffset < len(*data) {
-		*data = (*data)[:packetHdrOffset+snapLen]
+	data[0] = s.curTPacketHeader.packetType()
+	data[1] = s.ipLayerOffset
+	s.curTPacketHeader.pktLenPut(data[2:6])
+	s.curTPacketHeader.payloadCopyPut(data[6:])
+	if snapLen+capture.PacketHdrOffset < len(data) {
+		data = data[:capture.PacketHdrOffset+snapLen]
 	}
 
 	return data, nil

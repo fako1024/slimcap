@@ -3,7 +3,6 @@ package afpacket
 import (
 	"errors"
 	"fmt"
-	"reflect"
 	"sync"
 	"unsafe"
 
@@ -22,7 +21,7 @@ type Source struct {
 	isPromisc     bool
 	link          *link.Link
 
-	buf Packet
+	buf capture.Packet
 
 	sync.Mutex
 }
@@ -70,7 +69,7 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 			return nil, fmt.Errorf("failed to set option: %w", err)
 		}
 	}
-	src.buf = make(Packet, src.snapLen+packetHdrOffset)
+	src.buf = make(capture.Packet, src.snapLen+capture.PacketHdrOffset)
 
 	// Set socket options
 	if err := setSocketOptions(sd, link, src.snapLen, src.isPromisc); err != nil {
@@ -88,8 +87,8 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 // NewPacket creates an empty "buffer" package to be used as destination for the NextPacketInto()
 // method. It ensures that a valid packet of appropriate structure / length is created
 func (s *Source) NewPacket() capture.Packet {
-	p := make(Packet, s.snapLen+packetHdrOffset)
-	return &p
+	p := make(capture.Packet, s.snapLen+capture.PacketHdrOffset)
+	return p
 }
 
 // NextPacket receives the next packet from the wire and returns it. The operation is blocking. In
@@ -97,26 +96,21 @@ func (s *Source) NewPacket() capture.Packet {
 // buffer packet can be reused. Otherwise a new Packet of the Source-specific type is allocated.
 func (s *Source) NextPacket(pBuf capture.Packet) (capture.Packet, error) {
 
-	n, err := s.nextPacketInto(&s.buf)
+	n, err := s.nextPacketInto(s.buf)
 	if err != nil {
 		return nil, err
 	}
 
 	// If no buffer was provided, return a copy of the packet
 	if pBuf == nil {
-		return copyData((s.buf)[:n+packetHdrOffset]), nil
+		return copyData((s.buf)[:n+capture.PacketHdrOffset]), nil
 	}
 
-	// Assert the correct type and valid length of the buffer
-	data, ok := pBuf.(*Packet)
-	if ok {
-		*data = (*data)[:cap(*data)]
-	} else {
-		return nil, fmt.Errorf("incompatible packet type `%s` for RingBufSource", reflect.TypeOf(pBuf).String())
-	}
-	copy(*data, (s.buf)[:n+packetHdrOffset])
+	// Set the correct length of the buffer and populate it
+	pBuf = pBuf[:cap(pBuf)]
+	copy(pBuf, s.buf[:n+capture.PacketHdrOffset])
 
-	return data, nil
+	return pBuf, nil
 }
 
 // NextIPPacketFn executes the provided function on the next packet received on the wire and only
@@ -199,40 +193,40 @@ func (s *Source) Link() *link.Link {
 	return s.link
 }
 
-func (s *Source) nextPacketInto(data *Packet) (int, error) {
+func (s *Source) nextPacketInto(data capture.Packet) (int, error) {
 
 	if s.socketFD == 0 {
 		return -1, errors.New("cannot nextPacketInto() on closed capture source")
 	}
 
 	// Receive a packet from the write
-	n, sockAddr, err := unix.Recvfrom(s.socketFD, (*data)[6:], 0)
+	n, sockAddr, err := unix.Recvfrom(s.socketFD, data[6:], 0)
 	if err != nil {
 		return -1, fmt.Errorf("error receiving next packet from socket: %w", err)
 	}
 
 	// Determine the packet type (direction)
 	if llsa, ok := sockAddr.(*unix.SockaddrLinklayer); ok {
-		(*data)[0] = llsa.Pkttype
+		data[0] = llsa.Pkttype
 	} else {
 		return -1, fmt.Errorf("failed to determine packet type")
 	}
 
-	totalLen, err := s.determineTotalPktLen((*data)[6:])
+	totalLen, err := s.determineTotalPktLen(data[6:])
 	if err != nil {
 		return -1, err
 	}
 
-	(*data)[1] = byte(s.ipLayerOffset)
-	*(*uint32)(unsafe.Pointer(&(*data)[2])) = uint32(totalLen)
+	data[1] = byte(s.ipLayerOffset)
+	*(*uint32)(unsafe.Pointer(&data[2])) = uint32(totalLen)
 
 	return n, nil
 }
 
-func copyData(buf []byte) *Packet {
-	cpBuf := make(Packet, len(buf))
+func copyData(buf []byte) capture.Packet {
+	cpBuf := make(capture.Packet, len(buf))
 	copy(cpBuf, buf)
-	return &cpBuf
+	return cpBuf
 }
 
 // Unfortunately there is no ancillary information about the raw / original total size
