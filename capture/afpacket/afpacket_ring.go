@@ -278,7 +278,7 @@ fetch:
 		}
 
 		// Update position of next packet
-		if nextPos > 2048 {
+		if nextPos > 9000 {
 			fmt.Println(s.link.Name, "unexpectedly large next pos, will probably fail horribly", nextPos)
 		}
 		s.curTPacketHeader.ppos += nextPos
