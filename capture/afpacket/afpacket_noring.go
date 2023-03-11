@@ -159,6 +159,18 @@ func (s *Source) Stats() (capture.Stats, error) {
 	}, nil
 }
 
+// Unblock ensures that a potentially ongoing blocking PPOLL is released (returning an ErrCaptureUnblock)
+func (s *Source) Unblock() error {
+	if s == nil || s.socketFD < 0 {
+		return errors.New("cannot call Unblock() on nil / closed capture source")
+	}
+
+	// TODO: Implement
+	panic("not implemented for noring source")
+
+	return nil
+}
+
 // Close stops / closes the capture source
 func (s *Source) Close() error {
 	if s == nil || s.socketFD < 0 {

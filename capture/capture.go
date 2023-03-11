@@ -19,6 +19,9 @@ var (
 
 	// ErrCaptureStopped denotes that the capture was stopped
 	ErrCaptureStopped error = errors.New("capture was stopped")
+
+	// ErrCaptureUnblock denotes that the capture received am unblocking signal
+	ErrCaptureUnblock error = errors.New("capture was released / unblocked")
 )
 
 // Stats denotes a packet capture stats structure providing basic counters
@@ -112,6 +115,9 @@ type Source interface {
 	// Link returns the underlying link
 	Link() *link.Link
 
+	// Unblock ensures that a potentially ongoing blocking PPOLL is released (returning an ErrCaptureUnblock)
+	Unblock() error
+
 	// Close stops / closes the capture source
 	Close() error
 
@@ -127,14 +133,18 @@ type Source interface {
 type Packet []byte
 
 // NewIPPacket instantiates a new IP packet from a given payload and packet type / length
-func NewIPPacket(payload []byte, pktType PacketType, totalLen int) (res Packet) {
-	res = make(Packet, len(payload)+PacketHdrOffset)
+func NewIPPacket(buf Packet, payload []byte, pktType PacketType, totalLen int) Packet {
 
-	res[0] = pktType
-	*(*uint32)(unsafe.Pointer(&res[2])) = uint32(totalLen)
-	copy(res[PacketHdrOffset:], payload)
+	if buf == nil {
+		buf = make(Packet, len(payload)+PacketHdrOffset)
+	}
+	buf = buf[:cap(buf)]
 
-	return
+	buf[0] = pktType
+	*(*uint32)(unsafe.Pointer(&buf[2])) = uint32(totalLen)
+	copy(buf[PacketHdrOffset:], payload)
+
+	return buf
 }
 
 // TotalLen returnsthe total packet length, including all headers

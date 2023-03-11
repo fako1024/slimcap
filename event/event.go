@@ -12,7 +12,17 @@ type FileDescriptor = int
 // EvtFileDescriptor denotes a system-level event file descriptor
 type EvtFileDescriptor FileDescriptor
 
-var incrementBytes = []byte{1, 0, 0, 0, 0, 0, 0, 0}
+// EvtData denotes the data sent / received during an event
+type EvtData [8]byte
+
+var (
+
+	// SignalUnblock ends any ongoing PPOLL syscall  (similar to a timeout)
+	SignalUnblock = EvtData{2, 0, 0, 0, 0, 0, 0, 0}
+
+	// SignalStop causes the capture to stop
+	SignalStop = EvtData{4, 0, 0, 0, 0, 0, 0, 0}
+)
 
 // NewEvtFileDescriptor instantiates a new non-blocking event file descriptor
 func NewEvtFileDescriptor() (EvtFileDescriptor, error) {
@@ -24,15 +34,29 @@ func NewEvtFileDescriptor() (EvtFileDescriptor, error) {
 	return EvtFileDescriptor(efd), nil
 }
 
-// Stop sends a STOP event via the event file descriptor
-func (e EvtFileDescriptor) Stop() error {
-	n, err := unix.Write(int(e), incrementBytes)
+// Signal sends an event via the event file descriptor
+func (e EvtFileDescriptor) Signal(data EvtData) error {
+	n, err := unix.Write(int(e), data[:])
 	if err != nil {
-		return fmt.Errorf("failed to send STOP event: %w", err)
+		return fmt.Errorf("failed to send event: %w", err)
 	}
-	if n != len(incrementBytes) {
-		return fmt.Errorf("failed to send STOP event (unexpected number of bytes written, want %d, have %d)", len(incrementBytes), n)
+	if n != len(data) {
+		return fmt.Errorf("failed to send event (unexpected number of bytes written, want %d, have %d)", len(data), n)
 	}
 
 	return nil
+}
+
+// ReadEvent reads the event data from the event file descriptor
+func (e EvtFileDescriptor) ReadEvent() (EvtData, error) {
+	var data EvtData
+	n, err := unix.Read(int(e), data[:])
+	if err != nil {
+		return data, fmt.Errorf("failed to read event data: %w", err)
+	}
+	if n != len(data) {
+		return data, fmt.Errorf("failed to read event data (unexpected number of bytes read, want %d, have %d)", len(data), n)
+	}
+
+	return data, nil
 }

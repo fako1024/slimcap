@@ -184,13 +184,22 @@ func (s *RingBufSource) Stats() (capture.Stats, error) {
 	}, nil
 }
 
+// Unblock ensures that a potentially ongoing blocking PPOLL is released (returning an ErrCaptureUnblock)
+func (s *RingBufSource) Unblock() error {
+	if s == nil || s.eventFD < 0 || s.socketFD < 0 {
+		return errors.New("cannot call Unblock() on nil / closed capture source")
+	}
+
+	return s.eventFD.Signal(event.SignalUnblock)
+}
+
 // Close stops / closes the capture source
 func (s *RingBufSource) Close() error {
 	if s == nil || s.eventFD < 0 || s.socketFD < 0 {
 		return errors.New("cannot call Close() on nil / closed capture source")
 	}
 
-	if err := s.eventFD.Stop(); err != nil {
+	if err := s.eventFD.Signal(event.SignalStop); err != nil {
 		return err
 	}
 
@@ -238,15 +247,15 @@ fetch:
 	if s.curTPacketHeader == nil {
 		s.curTPacketHeader = s.nextTPacketHeader()
 		for s.curTPacketHeader.getStatus()&unix.TP_STATUS_USER == 0 {
-			wasCancelled, errno := event.Poll(s.eventFD, s.socketFD, unix.POLLIN|unix.POLLERR)
+			efdHasEvent, errno := event.Poll(s.eventFD, s.socketFD, unix.POLLIN|unix.POLLERR)
 			if errno != 0 {
 				if errno == unix.EINTR {
 					continue
 				}
 				return fmt.Errorf("error polling for next packet: %d", errno)
 			}
-			if wasCancelled {
-				return capture.ErrCaptureStopped
+			if efdHasEvent {
+				return s.handleEvent()
 			}
 
 			if s.curTPacketHeader.getStatus()&tPacketStatusCopy != 0 {
@@ -295,4 +304,20 @@ fetch:
 
 	s.curTPacketHeader.nPktsUsed++
 	return nil
+}
+
+func (s *RingBufSource) handleEvent() error {
+	efdData, err := s.eventFD.ReadEvent()
+	if err != nil {
+		return fmt.Errorf("error reading event: %w", err)
+	}
+
+	switch efdData {
+	case event.SignalUnblock:
+		return capture.ErrCaptureUnblock
+	case event.SignalStop:
+		return capture.ErrCaptureStopped
+	default:
+		return fmt.Errorf("unknown event during poll for next packet: %d", efdData)
+	}
 }
