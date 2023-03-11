@@ -233,7 +233,7 @@ func (s *RingBufSource) Link() *link.Link {
 	return s.link
 }
 
-func (s *RingBufSource) nextPacket() error {
+func (s *RingBufSource) nextPacket() (err error) {
 
 	// If the socket is invalid the capture is obviously closed and we return the respective
 	// error
@@ -252,10 +252,20 @@ fetch:
 				if errno == unix.EINTR {
 					continue
 				}
+
+				// In case there already is an error in effect (e.g. from a signal), it takes
+				// precedence
+				if err != nil {
+					return
+				}
 				return fmt.Errorf("error polling for next packet: %d", errno)
 			}
+
+			// If an event was received, ensure that the respective error is returned
+			// at the end of this method (but ensure that e.g. received data is processed
+			// gracefully first)
 			if efdHasEvent {
-				return s.handleEvent()
+				err = s.handleEvent()
 			}
 
 			if s.curTPacketHeader.getStatus()&tPacketStatusCopy != 0 {
@@ -303,7 +313,7 @@ fetch:
 	}
 
 	s.curTPacketHeader.nPktsUsed++
-	return nil
+	return err
 }
 
 func (s *RingBufSource) handleEvent() error {
