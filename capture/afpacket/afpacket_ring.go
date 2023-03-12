@@ -38,8 +38,9 @@ type RingBufSource struct {
 	isPromisc          bool
 	link               *link.Link
 
-	ringBuffer
+	unblocked bool
 
+	ringBuffer
 	sync.Mutex
 }
 
@@ -233,7 +234,7 @@ func (s *RingBufSource) Link() *link.Link {
 	return s.link
 }
 
-func (s *RingBufSource) nextPacket() (err error) {
+func (s *RingBufSource) nextPacket() error {
 
 	// If the socket is invalid the capture is obviously closed and we return the respective
 	// error
@@ -244,30 +245,35 @@ func (s *RingBufSource) nextPacket() (err error) {
 	// If the current TPacketHeader does not contain any more packets (or is uninitialized)
 	// fetch a new one from the ring buffer
 fetch:
-	if s.curTPacketHeader == nil {
-		s.curTPacketHeader = s.nextTPacketHeader()
-		for s.curTPacketHeader.getStatus()&unix.TP_STATUS_USER == 0 {
+	if s.curTPacketHeader == nil || s.unblocked {
+		if !s.unblocked {
+			s.curTPacketHeader = s.nextTPacketHeader()
+		}
+		for s.curTPacketHeader.getStatus()&unix.TP_STATUS_USER == 0 || s.unblocked {
+
+			// Unset the bypass marker
+			if s.unblocked {
+				s.unblocked = false
+			}
+
 			efdHasEvent, errno := event.Poll(s.eventFD, s.socketFD, unix.POLLIN|unix.POLLERR)
+
+			// If an event was received, ensure that the respective error is returned
+			// immediately (setting the `unblocked` marker to bypass checks done before
+			// upon next entry into this method)
+			if efdHasEvent {
+				return s.handleEvent()
+			}
+
+			// Handle errors
 			if errno != 0 {
 				if errno == unix.EINTR {
 					continue
 				}
-
-				// In case there already is an error in effect (e.g. from a signal), it takes
-				// precedence
-				if err != nil {
-					return
-				}
 				return fmt.Errorf("error polling for next packet: %d", errno)
 			}
 
-			// If an event was received, ensure that the respective error is returned
-			// at the end of this method (but ensure that e.g. received data is processed
-			// gracefully first)
-			if efdHasEvent {
-				err = s.handleEvent()
-			}
-
+			// Handle rare cases of runaway packets
 			if s.curTPacketHeader.getStatus()&tPacketStatusCopy != 0 {
 				if s.curTPacketHeader.nPktsUsed != s.curTPacketHeader.nPkts() {
 					fmt.Println(s.link.Name, "WUT (after runaway packet)?", s.curTPacketHeader.nPktsUsed, s.curTPacketHeader.nPkts())
@@ -313,21 +319,26 @@ fetch:
 	}
 
 	s.curTPacketHeader.nPktsUsed++
-	return err
+	return nil
 }
 
 func (s *RingBufSource) handleEvent() error {
+
+	// Read event data / type from the eventFD
 	efdData, err := s.eventFD.ReadEvent()
 	if err != nil {
 		return fmt.Errorf("error reading event: %w", err)
 	}
 
+	// Set the bypass marker to allow for re-entry in nextPacket() where we left off if
+	// required (e.g. on ErrCaptureUnblock)
+	s.unblocked = true
 	switch efdData {
 	case event.SignalUnblock:
 		return capture.ErrCaptureUnblock
 	case event.SignalStop:
 		return capture.ErrCaptureStopped
 	default:
-		return fmt.Errorf("unknown event during poll for next packet: %d", efdData)
+		return fmt.Errorf("unknown event during poll for next packet: %v", efdData)
 	}
 }

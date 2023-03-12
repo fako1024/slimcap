@@ -166,7 +166,7 @@ func (s *Source) Unblock() error {
 	}
 
 	// TODO: Implement
-	panic("not implemented for noring source")
+	panic("not implemented for no_ring source")
 
 	return nil
 }
