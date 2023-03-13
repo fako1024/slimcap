@@ -5,7 +5,7 @@ import (
 )
 
 // Poll polls (blocking, hence no timeout) for events on the file descriptor and the event
-// file descriptor (waiting for a stop / POLLIN event).
+// file descriptor (waiting for a POLLIN event).
 func Poll(efd EvtFileDescriptor, fd FileDescriptor, events int16) (bool, unix.Errno) {
 	pollEvents := [...]unix.PollFd{
 		{

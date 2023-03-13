@@ -3,9 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 const (
@@ -58,12 +59,22 @@ func ParseConfig() (cfg Config) {
 	cfg.Ifaces = parseList(rawIfaces)
 	cfg.SkipIfaces = parseList(rawSkipIfaces)
 
-	lvl, err := logrus.ParseLevel(cfg.LogLevel)
+	lvl, err := zap.ParseAtomicLevel(strings.ToLower(cfg.LogLevel))
 	if err != nil {
-		panic(fmt.Sprintf("couldn't parse log level: %v", err))
+		fmt.Printf("failed to parse log level: %s\n", err)
+		os.Exit(1)
 	}
-	logger := logrus.StandardLogger()
-	logger.SetLevel(lvl)
+
+	logCfg := zap.NewDevelopmentConfig()
+	logCfg.DisableStacktrace = true
+	logCfg.Level.SetLevel(lvl.Level())
+	zapLogger, err := logCfg.Build()
+	if err != nil {
+		fmt.Printf("failed to instantiate logger: %s\n", err)
+		os.Exit(1)
+	}
+
+	logger = zapLogger.Sugar()
 
 	return
 }
