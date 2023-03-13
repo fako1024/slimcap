@@ -1,12 +1,15 @@
 package main
 
 import (
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
+
+var logger *zap.SugaredLogger
 
 func main() {
 
 	cfg := ParseConfig()
+	defer logger.Sync()
 
 	c := &Capture{}
 	if err := c.OnIfaces(cfg.Ifaces).
@@ -18,6 +21,6 @@ func main() {
 		WithCPUProfiling(cfg.CPUProfileOutput).
 		WithMemProfiling(cfg.MemProfileOutput).
 		Run(); err != nil {
-		logrus.StandardLogger().Fatalf("critical error during capture: %s", err)
+		logger.Fatalf("critical error during capture: %s", err)
 	}
 }

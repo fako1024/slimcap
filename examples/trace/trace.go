@@ -14,10 +14,7 @@ import (
 	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/capture/afpacket"
 	"github.com/fako1024/slimcap/link"
-	"github.com/sirupsen/logrus"
 )
-
-var log = logrus.StandardLogger()
 
 type Capture struct {
 	ifaces, skipIfaces []string
@@ -100,7 +97,7 @@ func (c *Capture) Run() (err error) {
 		return err
 	}
 	for _, iface := range links {
-		log.Infof("Found interface `%s` (idx %d), link type %d, HWAddr `%s`, flags `%s`", iface.Name, iface.Index, iface.LinkType, iface.HardwareAddr, iface.Flags)
+		logger.Infof("Found interface `%s` (idx %d), link type %d, HWAddr `%s`, flags `%s`", iface.Name, iface.Index, iface.LinkType, iface.HardwareAddr, iface.Flags)
 	}
 
 	// construct list of skipped interfaces
@@ -145,13 +142,13 @@ func (c *Capture) Run() (err error) {
 		return skipped[i] < skipped[j]
 	})
 	if len(skipped) > 0 {
-		log.Warnf("skipping capture on interfaces [%s]", strings.Join(skipped, ","))
+		logger.Warnf("skipping capture on interfaces [%s]", strings.Join(skipped, ","))
 	}
 
 	sort.Slice(capturing, func(i, j int) bool {
 		return capturing[i] < capturing[j]
 	})
-	log.Infof("attempting capture on interfaces [%s]", strings.Join(capturing, ","))
+	logger.Infof("attempting capture on interfaces [%s]", strings.Join(capturing, ","))
 
 	sigExitChan := make(chan os.Signal, 1)
 	signal.Notify(sigExitChan, syscall.SIGTERM, os.Interrupt)
@@ -171,7 +168,7 @@ func (c *Capture) Run() (err error) {
 			}
 
 			if !l.IsUp() {
-				log.Warnf("skipping listener on non-up interface `%s`", l.Name)
+				logger.Warnf("skipping listener on non-up interface `%s`", l.Name)
 				return
 			}
 
@@ -179,12 +176,12 @@ func (c *Capture) Run() (err error) {
 			if c.useRingBuffer {
 				listener, err = afpacket.NewRingBufSourceFromLink(l)
 				if err != nil {
-					log.Errorf("error starting listener (with ring buffer) on `%s`: %s", l.Name, err)
+					logger.Errorf("error starting listener (with ring buffer) on `%s`: %s", l.Name, err)
 				}
 			} else {
 				listener, err = afpacket.NewSourceFromLink(l)
 				if err != nil {
-					log.Errorf("error starting listener (no ring buffer) on `%s`: %s", l.Name, err)
+					logger.Errorf("error starting listener (no ring buffer) on `%s`: %s", l.Name, err)
 				}
 			}
 			listeners = append(listeners, listener)
@@ -194,17 +191,17 @@ func (c *Capture) Run() (err error) {
 				for {
 					if err := listener.NextPacketFn(func(payload []byte, totalLen uint32, pktType byte, ipLayerOffset byte) error {
 						if c.logPacketPayload {
-							log.Infof("[%s] Got %v / %d", l.Name, payload[ipLayerOffset:ipLayerOffset+16], pktType)
+							logger.Infof("[%s] Got %v / %d", l.Name, payload[ipLayerOffset:ipLayerOffset+16], pktType)
 						}
 						return nil
 					}); err != nil {
 						if errors.Is(err, capture.ErrCaptureStopped) {
-							log.Infof("gracefully stopped capture on `%s`", l.Name)
+							logger.Infof("gracefully stopped capture on `%s`", l.Name)
 							return
 						}
 						nErr++
 						if nErr >= c.maxIfaceErrors {
-							log.Errorf("too many errors (%d) on `%s`, stopping capture", nErr, l.Name)
+							logger.Errorf("too many errors (%d) on `%s`, stopping capture", nErr, l.Name)
 						}
 					}
 				}
@@ -213,17 +210,17 @@ func (c *Capture) Run() (err error) {
 					pkt, err := listener.NextPacket(nil)
 					if err != nil {
 						if errors.Is(err, capture.ErrCaptureStopped) {
-							log.Infof("gracefully stopped capture on `%s`", l.Name)
+							logger.Infof("gracefully stopped capture on `%s`", l.Name)
 							return
 						}
 						nErr++
 						if nErr >= c.maxIfaceErrors {
-							log.Errorf("too many errors (%d) on `%s`, stopping capture", nErr, l.Name)
+							logger.Errorf("too many errors (%d) on `%s`, stopping capture", nErr, l.Name)
 						}
 					}
 
 					if c.logPacketPayload {
-						log.Infof("[%s] Got IP layer %v / %d", l.Name, pkt.IPLayer()[:16], pkt.Type())
+						logger.Infof("[%s] Got IP layer %v / %d", l.Name, pkt.IPLayer()[:16], pkt.Type())
 					}
 				}
 			}
@@ -238,12 +235,12 @@ func (c *Capture) Run() (err error) {
 		for _, listener := range listeners {
 			stats, err := listener.Stats()
 			if err != nil {
-				log.Errorf("failed to retrieve socket stats: %s", err)
+				logger.Errorf("failed to retrieve socket stats: %s", err)
 			}
-			log.Infof("Packet stats: %#v", stats)
+			logger.Infof("Packet stats: %#v", stats)
 
 			if err := listener.Close(); err != nil {
-				log.Errorf("failed to gracefully stop capture: %s", err)
+				logger.Errorf("failed to gracefully stop capture: %s", err)
 			}
 		}
 	}()
