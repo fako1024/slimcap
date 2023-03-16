@@ -21,7 +21,7 @@ type Source struct {
 	isPromisc     bool
 	link          *link.Link
 
-	buf capture.Packet
+	buf []byte
 
 	sync.Mutex
 }
@@ -103,7 +103,7 @@ func (s *Source) NextPacket(pBuf capture.Packet) (capture.Packet, error) {
 
 	// If no buffer was provided, return a copy of the packet
 	if pBuf == nil {
-		return copyData((s.buf)[:n+capture.PacketHdrOffset]), nil
+		return copyPacket(s.buf[:n+capture.PacketHdrOffset]), nil
 	}
 
 	// Set the correct length of the buffer and populate it
@@ -142,6 +142,28 @@ func (s *Source) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType c
 	}
 
 	return fn(s.buf[:n], uint32(totalLen), pktType, s.ipLayerOffset) // TODO: How do we get the total packet size from a plain socket?
+}
+
+// NextIPPacket receives the next packet's IP layer from the wire and returns it. The operation is blocking.
+// In case a non-nil "buffer" IPLayer is provided it will be populated with the data (and returned). The
+// buffer packet can be reused. Otherwise a new IPLayer is allocated.
+func (s *Source) NextIPPacket(pBuf capture.IPLayer) (capture.IPLayer, capture.PacketType, uint32, error) {
+
+	n, pktType, totalLen, err := s.nextIPLayerInto(s.buf)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+
+	// If no buffer was provided, return a copy of the packet
+	if pBuf == nil {
+		return copyIPLayer(s.buf[s.ipLayerOffset:n]), pktType, totalLen, nil
+	}
+
+	// Set the correct length of the buffer and populate it
+	pBuf = pBuf[:cap(pBuf)]
+	copy(pBuf, s.buf[s.ipLayerOffset:n])
+
+	return pBuf, pktType, totalLen, nil
 }
 
 // Stats returns (and clears) the packet counters of the underlying socket
@@ -235,8 +257,42 @@ func (s *Source) nextPacketInto(data capture.Packet) (int, error) {
 	return n, nil
 }
 
-func copyData(buf []byte) capture.Packet {
+func (s *Source) nextIPLayerInto(data capture.IPLayer) (int, capture.PacketType, uint32, error) {
+
+	if s.socketFD == 0 {
+		return -1, 0, 0, errors.New("cannot nextPacketInto() on closed capture source")
+	}
+
+	// Receive a packet from the write
+	n, sockAddr, err := unix.Recvfrom(s.socketFD, data, 0)
+	if err != nil {
+		return -1, 0, 0, fmt.Errorf("error receiving next packet from socket: %w", err)
+	}
+
+	// Determine the packet type (direction)
+	var pktType uint8
+	if llsa, ok := sockAddr.(*unix.SockaddrLinklayer); ok {
+		pktType = llsa.Pkttype
+	} else {
+		return -1, 0, 0, fmt.Errorf("failed to determine packet type")
+	}
+
+	totalLen, err := s.determineTotalPktLen(data)
+	if err != nil {
+		return -1, 0, 0, err
+	}
+
+	return n, pktType, uint32(totalLen), nil
+}
+
+func copyPacket(buf []byte) capture.Packet {
 	cpBuf := make(capture.Packet, len(buf))
+	copy(cpBuf, buf)
+	return cpBuf
+}
+
+func copyIPLayer(buf []byte) capture.IPLayer {
+	cpBuf := make(capture.IPLayer, len(buf))
 	copy(cpBuf, buf)
 	return cpBuf
 }

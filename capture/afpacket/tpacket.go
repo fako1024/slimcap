@@ -177,6 +177,11 @@ func (t tPacketHeader) payloadCopyPut(data []byte) {
 	copy(data, t.data[t.ppos+mac:t.ppos+mac+t.snapLen()])
 }
 
+func (t tPacketHeader) payloadCopyPutAtOffset(data []byte, offset uint32) {
+	mac := uint32(*(*uint16)(unsafe.Pointer(&t.data[t.ppos+24])))
+	copy(data, t.data[t.ppos+mac+offset:t.ppos+mac+t.snapLen()])
+}
+
 func (t tPacketHeader) payloadCopy() []byte {
 	rawPayload := t.payloadNoCopy()
 	cpPayload := make([]byte, len(rawPayload))

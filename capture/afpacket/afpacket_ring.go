@@ -169,6 +169,36 @@ func (s *RingBufSource) NextPacketFn(fn func(payload []byte, totalLen uint32, pk
 	return fn(s.curTPacketHeader.payloadNoCopy(), s.curTPacketHeader.pktLen(), s.curTPacketHeader.packetType(), s.ipLayerOffset)
 }
 
+// NextIPPacket receives the next packet's IP layer from the wire and returns it. The operation is blocking.
+// In case a non-nil "buffer" IPLayer is provided it will be populated with the data (and returned). The
+// buffer packet can be reused. Otherwise a new IPLayer is allocated.
+func (s *RingBufSource) NextIPPacket(pBuf capture.IPLayer) (capture.IPLayer, capture.PacketType, uint32, error) {
+
+	if err := s.nextPacket(); err != nil {
+		return nil, 0, 0, err
+	}
+	var (
+		data    capture.IPLayer
+		snapLen = int(s.curTPacketHeader.snapLen()) - int(s.ipLayerOffset)
+	)
+
+	// If a buffer was provided, et the correct length of the buffer and populate it
+	// Otherwise, allocate a new IPLayer
+	if pBuf != nil {
+		data = pBuf[:cap(pBuf)]
+	} else {
+		data = make(capture.IPLayer, snapLen)
+	}
+
+	// Populate the packet
+	s.curTPacketHeader.payloadCopyPutAtOffset(data, uint32(s.ipLayerOffset))
+	if snapLen < len(data) {
+		data = data[:snapLen]
+	}
+
+	return data, s.curTPacketHeader.packetType(), s.curTPacketHeader.pktLen(), nil
+}
+
 // Stats returns (and clears) the packet counters of the underlying socket
 func (s *RingBufSource) Stats() (capture.Stats, error) {
 	s.Lock()
