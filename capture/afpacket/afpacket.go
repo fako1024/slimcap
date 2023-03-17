@@ -97,7 +97,7 @@ func setupRingBuffer(sd event.FileDescriptor, tPacketReq tPacketRequest) ([]byte
 		return nil, -1, errors.New("invalid socket")
 	}
 
-	// Setup event file descriptor used for stopping the capture (we start with that to avoid
+	// Setup event file descriptor used for stopping / unblocking the capture (we start with that to avoid
 	// having to clean up the ring buffer in case the decriptor can't be created
 	eventFD, err := event.NewEvtFileDescriptor()
 	if err != nil {

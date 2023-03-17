@@ -15,6 +15,7 @@ import (
 // Source denotes a plain AF_PACKET capture source
 type Source struct {
 	socketFD event.FileDescriptor
+	eventFD  event.EvtFileDescriptor
 
 	ipLayerOffset byte
 	snapLen       int
@@ -71,6 +72,12 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 	}
 	src.buf = make(capture.Packet, src.snapLen+capture.PacketHdrOffset)
 
+	// Setup event file descriptor used for stopping / unblocking the capture
+	src.eventFD, err = event.NewEvtFileDescriptor()
+	if err != nil {
+		return nil, fmt.Errorf("failed to setup event file descriptor: %w", err)
+	}
+
 	// Set socket options
 	if err := setSocketOptions(sd, link, src.snapLen, src.isPromisc); err != nil {
 		return nil, fmt.Errorf("failed to set AF_PACKET socket options on %s: %w", link.Name, err)
@@ -122,8 +129,27 @@ func (s *Source) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType c
 		return errors.New("cannot NextPacketFn() on closed capture source")
 	}
 
-	// Receive a packet from the write
-	n, sockAddr, err := unix.Recvfrom(s.socketFD, s.buf, 0)
+retry:
+	efdHasEvent, errno := event.Poll(s.eventFD, s.socketFD, unix.POLLIN|unix.POLLERR)
+
+	// If an event was received, ensure that the respective error is returned
+	// immediately (setting the `unblocked` marker to bypass checks done before
+	// upon next entry into this method)
+	if efdHasEvent {
+		return s.handleEvent()
+	}
+
+	// Handle errors
+	if errno != 0 {
+		if errno == unix.EINTR {
+			goto retry
+		}
+		return fmt.Errorf("error polling for next packet: %d", errno)
+	}
+
+	// Receive a packet from the wire (According to PPOLL there should be at least one)
+	// so we do not block
+	n, sockAddr, err := unix.Recvfrom(s.socketFD, s.buf, unix.MSG_DONTWAIT)
 	if err != nil {
 		return fmt.Errorf("error receiving next packet from socket: %w", err)
 	}
@@ -183,27 +209,28 @@ func (s *Source) Stats() (capture.Stats, error) {
 
 // Unblock ensures that a potentially ongoing blocking PPOLL is released (returning an ErrCaptureUnblock)
 func (s *Source) Unblock() error {
-	if s == nil || s.socketFD < 0 {
+	if s == nil || s.eventFD < 0 || s.socketFD < 0 {
 		return errors.New("cannot call Unblock() on nil / closed capture source")
 	}
 
-	// TODO: Implement
-	panic("not implemented for no_ring source")
-
-	return nil
+	return s.eventFD.Signal(event.SignalUnblock)
 }
 
 // Close stops / closes the capture source
 func (s *Source) Close() error {
-	if s == nil || s.socketFD < 0 {
+	if s == nil || s.eventFD < 0 || s.socketFD < 0 {
 		return errors.New("cannot call Close() on nil / closed capture source")
+	}
+
+	if err := s.eventFD.Signal(event.SignalStop); err != nil {
+		return err
 	}
 
 	if err := unix.Close(s.socketFD); err != nil {
 		return err
 	}
 
-	s.socketFD = 0
+	s.socketFD = -1
 
 	return nil
 }
@@ -213,7 +240,7 @@ func (s *Source) Free() error {
 	if s == nil {
 		return errors.New("cannot call Free() on nil capture source")
 	}
-	if s.socketFD != 0 {
+	if s.socketFD >= 0 {
 		return errors.New("cannot call Free() on open capture source, call Close() first")
 	}
 
@@ -233,8 +260,27 @@ func (s *Source) nextPacketInto(data capture.Packet) (int, error) {
 		return -1, errors.New("cannot nextPacketInto() on closed capture source")
 	}
 
-	// Receive a packet from the write
-	n, sockAddr, err := unix.Recvfrom(s.socketFD, data[6:], 0)
+retry:
+	efdHasEvent, errno := event.Poll(s.eventFD, s.socketFD, unix.POLLIN|unix.POLLERR)
+
+	// If an event was received, ensure that the respective error is returned
+	// immediately (setting the `unblocked` marker to bypass checks done before
+	// upon next entry into this method)
+	if efdHasEvent {
+		return -1, s.handleEvent()
+	}
+
+	// Handle errors
+	if errno != 0 {
+		if errno == unix.EINTR {
+			goto retry
+		}
+		return -1, fmt.Errorf("error polling for next packet: %d", errno)
+	}
+
+	// Receive a packet from the wire (According to PPOLL there should be at least one)
+	// so we do not block
+	n, sockAddr, err := unix.Recvfrom(s.socketFD, data[6:], unix.MSG_DONTWAIT)
 	if err != nil {
 		return -1, fmt.Errorf("error receiving next packet from socket: %w", err)
 	}
@@ -243,12 +289,12 @@ func (s *Source) nextPacketInto(data capture.Packet) (int, error) {
 	if llsa, ok := sockAddr.(*unix.SockaddrLinklayer); ok {
 		data[0] = llsa.Pkttype
 	} else {
-		return -1, fmt.Errorf("failed to determine packet type")
+		return -1, errors.New("failed to determine packet type")
 	}
 
 	totalLen, err := s.determineTotalPktLen(data[6:])
 	if err != nil {
-		return -1, err
+		return -1, fmt.Errorf("failed to determine packet length: %w", err)
 	}
 
 	data[1] = byte(s.ipLayerOffset)
@@ -263,7 +309,26 @@ func (s *Source) nextIPLayerInto(data capture.IPLayer) (int, capture.PacketType,
 		return -1, 0, 0, errors.New("cannot nextPacketInto() on closed capture source")
 	}
 
-	// Receive a packet from the write
+retry:
+	efdHasEvent, errno := event.Poll(s.eventFD, s.socketFD, unix.POLLIN|unix.POLLERR)
+
+	// If an event was received, ensure that the respective error is returned
+	// immediately (setting the `unblocked` marker to bypass checks done before
+	// upon next entry into this method)
+	if efdHasEvent {
+		return -1, 0, 0, s.handleEvent()
+	}
+
+	// Handle errors
+	if errno != 0 {
+		if errno == unix.EINTR {
+			goto retry
+		}
+		return -1, 0, 0, fmt.Errorf("error polling for next packet: %d", errno)
+	}
+
+	// Receive a packet from the wire (According to PPOLL there should be at least one)
+	// so we do not block
 	n, sockAddr, err := unix.Recvfrom(s.socketFD, data, 0)
 	if err != nil {
 		return -1, 0, 0, fmt.Errorf("error receiving next packet from socket: %w", err)
@@ -295,6 +360,26 @@ func copyIPLayer(buf []byte) capture.IPLayer {
 	cpBuf := make(capture.IPLayer, len(buf))
 	copy(cpBuf, buf)
 	return cpBuf
+}
+
+func (s *Source) handleEvent() error {
+
+	// Read event data / type from the eventFD
+	efdData, err := s.eventFD.ReadEvent()
+	if err != nil {
+		return fmt.Errorf("error reading event: %w", err)
+	}
+
+	// Set the bypass marker to allow for re-entry in nextPacket() where we left off if
+	// required (e.g. on ErrCaptureUnblock)
+	switch efdData {
+	case event.SignalUnblock:
+		return capture.ErrCaptureUnblock
+	case event.SignalStop:
+		return capture.ErrCaptureStopped
+	default:
+		return fmt.Errorf("unknown event during poll for next packet: %v", efdData)
+	}
 }
 
 // Unfortunately there is no ancillary information about the raw / original total size
