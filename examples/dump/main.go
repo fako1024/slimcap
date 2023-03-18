@@ -44,13 +44,6 @@ func main() {
 	}
 	logger.Infof("Listening on interface `%s`: %+v", listener.Link().Name, listener.Link().Interface)
 
-	go func() {
-		time.Sleep(time.Second)
-		if err := listener.Close(); err != nil {
-			logger.Fatalf("failed to close listener on `%s`: %s", devName, err)
-		}
-	}()
-
 	logger.Infof("Reading %d packets from wire (copy operation)...", maxPkts)
 	for i := 0; i < maxPkts; i++ {
 		p, err := listener.NextPacket(nil)
