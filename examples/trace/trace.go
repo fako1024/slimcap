@@ -12,7 +12,8 @@ import (
 	"syscall"
 
 	"github.com/fako1024/slimcap/capture"
-	"github.com/fako1024/slimcap/capture/afpacket"
+	"github.com/fako1024/slimcap/capture/afpacket/afpacket"
+	"github.com/fako1024/slimcap/capture/afpacket/afring"
 	"github.com/fako1024/slimcap/link"
 )
 
@@ -174,7 +175,7 @@ func (c *Capture) Run() (err error) {
 
 			var listener capture.Source
 			if c.useRingBuffer {
-				listener, err = afpacket.NewRingBufSourceFromLink(l)
+				listener, err = afring.NewSourceFromLink(l)
 				if err != nil {
 					logger.Errorf("error starting listener (with ring buffer) on `%s`: %s", l.Name, err)
 				}

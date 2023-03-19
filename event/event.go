@@ -6,11 +6,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// FileDescriptor denotes a generic system level file descriptor (an int)
-type FileDescriptor = int
-
 // EvtFileDescriptor denotes a system-level event file descriptor
-type EvtFileDescriptor FileDescriptor
+type EvtFileDescriptor int
 
 // EvtData denotes the data sent / received during an event
 type EvtData [8]byte
@@ -24,8 +21,8 @@ var (
 	SignalStop = EvtData{4, 0, 0, 0, 0, 0, 0, 0}
 )
 
-// NewEvtFileDescriptor instantiates a new non-blocking event file descriptor
-func NewEvtFileDescriptor() (EvtFileDescriptor, error) {
+// New instantiates a new non-blocking event file descriptor
+func New() (EvtFileDescriptor, error) {
 	efd, err := unix.Eventfd(0, unix.EFD_NONBLOCK)
 	if err != nil {
 		return -1, fmt.Errorf("failed to create event file descriptor: %w", err)
