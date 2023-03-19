@@ -1,12 +1,13 @@
 package event
 
 import (
+	"github.com/fako1024/slimcap/capture/afpacket/socket"
 	"golang.org/x/sys/unix"
 )
 
 // Poll polls (blocking, hence no timeout) for events on the file descriptor and the event
 // file descriptor (waiting for a POLLIN event).
-func Poll(efd EvtFileDescriptor, fd FileDescriptor, events int16) (bool, unix.Errno) {
+func Poll(efd EvtFileDescriptor, fd socket.FileDescriptor, events int16) (bool, unix.Errno) {
 	pollEvents := [...]unix.PollFd{
 		{
 			Fd:     int32(efd),

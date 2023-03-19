@@ -1,23 +1,33 @@
 //go:build linux
 // +build linux
 
-package afpacket
+package socket
 
 import (
 	"errors"
 	"fmt"
 	"unsafe"
 
-	"github.com/fako1024/slimcap/event"
 	"github.com/fako1024/slimcap/link"
 	"golang.org/x/sys/unix"
 )
 
 const (
-	DefaultSnapLen = (1 << 16) // 64 kiB
+	TPacketVersion = unix.TPACKET_V3
 )
 
-func setupSocket(iface *link.Link) (event.FileDescriptor, error) {
+// FileDescriptor denotes a generic system level file descriptor (an int)
+type FileDescriptor int
+
+// TPacketStats denotes the V3 tpacket_stats structure, c.f.
+// https://github.com/torvalds/linux/blob/master/include/uapi/linux/if_packet.h
+type TPacketStats struct {
+	Packets      uint32
+	Drops        uint32
+	QueueFreezes uint32
+}
+
+func New(iface *link.Link) (FileDescriptor, error) {
 
 	// Setup socket
 	sd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, htons(unix.ETH_P_ALL))
@@ -33,10 +43,10 @@ func setupSocket(iface *link.Link) (event.FileDescriptor, error) {
 		return -1, err
 	}
 
-	return sd, nil
+	return FileDescriptor(sd), nil
 }
 
-func getSocketStats(sd event.FileDescriptor) (ss tPacketStats, err error) {
+func (sd FileDescriptor) GetSocketStats() (ss TPacketStats, err error) {
 
 	if sd <= 0 {
 		err = errors.New("invalid socket")
@@ -50,14 +60,14 @@ func getSocketStats(sd event.FileDescriptor) (ss tPacketStats, err error) {
 	return
 }
 
-func setSocketOptions(sd event.FileDescriptor, iface *link.Link, snapLen int, promisc bool) error {
+func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, promisc bool) error {
 
 	if sd <= 0 {
 		return errors.New("invalid socket")
 	}
 
 	// Set TPacket version on socket to the configured version
-	if err := unix.SetsockoptInt(sd, unix.SOL_PACKET, unix.PACKET_VERSION, tPacketVersion); err != nil {
+	if err := unix.SetsockoptInt(int(sd), unix.SOL_PACKET, unix.PACKET_VERSION, TPacketVersion); err != nil {
 		return fmt.Errorf("failed to set TPacket version: %w", err)
 	}
 
@@ -91,37 +101,15 @@ func setSocketOptions(sd event.FileDescriptor, iface *link.Link, snapLen int, pr
 	return nil
 }
 
-func setupRingBuffer(sd event.FileDescriptor, tPacketReq tPacketRequest) ([]byte, event.EvtFileDescriptor, error) {
-
-	if sd <= 0 {
-		return nil, -1, errors.New("invalid socket")
-	}
-
-	// Setup event file descriptor used for stopping / unblocking the capture (we start with that to avoid
-	// having to clean up the ring buffer in case the decriptor can't be created
-	eventFD, err := event.NewEvtFileDescriptor()
-	if err != nil {
-		return nil, -1, fmt.Errorf("failed to setup event file descriptor: %w", err)
-	}
-
-	// Set socket option to use PACKET_RX_RING
-	if err := setsockopt(sd, unix.SOL_PACKET, unix.PACKET_RX_RING, unsafe.Pointer(&tPacketReq), unsafe.Sizeof(tPacketReq)); err != nil {
-		return nil, -1, fmt.Errorf("failed to call ring buffer instruction: %w", err)
-	}
-
-	// Setup memory mapping
-	buf, err := unix.Mmap(sd, 0, tPacketReq.blockSizeNr(), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
-	if err != nil {
-		return nil, -1, fmt.Errorf("failed to set up mmap ring buffer: %w", err)
-	}
-	if buf == nil {
-		return nil, -1, fmt.Errorf("mmap ring buffer is nil (error: %w)", err)
-	}
-
-	return buf, eventFD, nil
+func (sd FileDescriptor) SetupRingBuffer(val unsafe.Pointer, vallen uintptr) error {
+	return setsockopt(sd, unix.SOL_PACKET, unix.PACKET_RX_RING, val, vallen)
 }
 
-func getsockopt(fd, level, name int, val unsafe.Pointer, vallen uintptr) error {
+func (sd FileDescriptor) Close() error {
+	return unix.Close(int(sd))
+}
+
+func getsockopt(fd FileDescriptor, level, name int, val unsafe.Pointer, vallen uintptr) error {
 	if _, _, errno := unix.Syscall6(unix.SYS_GETSOCKOPT, uintptr(fd), uintptr(level), uintptr(name), uintptr(val), vallen, 0); errno != 0 {
 		return error(errno)
 	}
@@ -129,7 +117,7 @@ func getsockopt(fd, level, name int, val unsafe.Pointer, vallen uintptr) error {
 	return nil
 }
 
-func setsockopt(fd, level, name int, val unsafe.Pointer, vallen uintptr) error {
+func setsockopt(fd FileDescriptor, level, name int, val unsafe.Pointer, vallen uintptr) error {
 	if _, _, errno := unix.Syscall6(unix.SYS_SETSOCKOPT, uintptr(fd), uintptr(level), uintptr(name), uintptr(val), vallen, 0); errno != 0 {
 		return error(errno)
 	}

@@ -1,4 +1,7 @@
-package afpacket
+//go:build linux
+// +build linux
+
+package afring
 
 import (
 	"fmt"
@@ -187,14 +190,6 @@ func (t tPacketHeader) payloadCopy() []byte {
 	cpPayload := make([]byte, len(rawPayload))
 	copy(cpPayload, rawPayload)
 	return cpPayload
-}
-
-// tPacketStats denotes the V3 tpacket_stats structure, c.f.
-// https://github.com/torvalds/linux/blob/master/include/uapi/linux/if_packet.h
-type tPacketStats struct {
-	packets      uint32
-	drops        uint32
-	queueFreezes uint32
 }
 
 func tPacketAlign(x int) int {

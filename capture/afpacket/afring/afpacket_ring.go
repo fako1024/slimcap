@@ -1,18 +1,23 @@
-package afpacket
+//go:build linux
+// +build linux
+
+package afring
 
 import (
 	"errors"
 	"fmt"
 	"sync"
+	"unsafe"
 
 	"github.com/fako1024/slimcap/capture"
+	"github.com/fako1024/slimcap/capture/afpacket/socket"
 	"github.com/fako1024/slimcap/event"
 	"github.com/fako1024/slimcap/link"
 	"golang.org/x/sys/unix"
 )
 
 const (
-	tPacketVersion = unix.TPACKET_V3
+	DefaultSnapLen = (1 << 16) // 64 kiB
 )
 
 type ringBuffer struct {
@@ -27,9 +32,9 @@ func (b *ringBuffer) nextTPacketHeader() *tPacketHeader {
 	return &tPacketHeader{data: b.ring[b.offset*int(b.tpReq.blockSize):]}
 }
 
-// RingBufSource denotes an AF_PACKET capture source making use of a ring buffer
-type RingBufSource struct {
-	socketFD event.FileDescriptor
+// Source denotes an AF_PACKET capture source making use of a ring buffer
+type Source struct {
+	socketFD socket.FileDescriptor
 	eventFD  event.EvtFileDescriptor
 
 	ipLayerOffset      byte
@@ -44,8 +49,8 @@ type RingBufSource struct {
 	sync.Mutex
 }
 
-// NewRingBufSource instantiates a new AF_PACKET capture source making use of a ring buffer
-func NewRingBufSource(iface string, options ...Option) (*RingBufSource, error) {
+// NewSource instantiates a new AF_PACKET capture source making use of a ring buffer
+func NewSource(iface string, options ...Option) (*Source, error) {
 
 	if iface == "" {
 		return nil, errors.New("no interface provided")
@@ -55,12 +60,12 @@ func NewRingBufSource(iface string, options ...Option) (*RingBufSource, error) {
 		return nil, fmt.Errorf("failed to set up link on %s: %s", iface, err)
 	}
 
-	return NewRingBufSourceFromLink(link, options...)
+	return NewSourceFromLink(link, options...)
 }
 
-// NewRingBufSourceFromLink instantiates a new AF_PACKET capture source making use of a ring buffer
+// NewSourceFromLink instantiates a new AF_PACKET capture source making use of a ring buffer
 // taking an existing link instance
-func NewRingBufSourceFromLink(link *link.Link, options ...Option) (*RingBufSource, error) {
+func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 
 	// Fail if link is not up
 	if !link.IsUp() {
@@ -68,7 +73,7 @@ func NewRingBufSourceFromLink(link *link.Link, options ...Option) (*RingBufSourc
 	}
 
 	// Define new source
-	src := &RingBufSource{
+	src := &Source{
 		snapLen:       DefaultSnapLen,
 		blockSize:     tPacketDefaultBlockSize,
 		nBlocks:       tPacketDefaultBlockNr,
@@ -78,9 +83,7 @@ func NewRingBufSourceFromLink(link *link.Link, options ...Option) (*RingBufSourc
 	}
 
 	for _, opt := range options {
-		if err := opt(src); err != nil {
-			return nil, fmt.Errorf("failed to set option: %w", err)
-		}
+		opt(src)
 	}
 
 	// Define a new TPacket request
@@ -91,26 +94,26 @@ func NewRingBufSourceFromLink(link *link.Link, options ...Option) (*RingBufSourc
 	}
 
 	// Setup socket
-	src.socketFD, err = setupSocket(link)
+	src.socketFD, err = socket.New(link)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup AF_PACKET socket on %s: %w", link.Name, err)
 	}
 
 	// Set socket options
-	if err := setSocketOptions(src.socketFD, link, src.snapLen, src.isPromisc); err != nil {
+	if err := src.socketFD.SetSocketOptions(link, src.snapLen, src.isPromisc); err != nil {
 		return nil, fmt.Errorf("failed to set AF_PACKET socket options on %s: %w", link.Name, err)
 	}
 
 	// Setup ring buffer
 	src.ringBuffer.ring, src.eventFD, err = setupRingBuffer(src.socketFD, src.tpReq)
 	if err != nil {
-		unix.Close(src.socketFD)
+		src.socketFD.Close()
 		return nil, fmt.Errorf("failed to setup AF_PACKET mmap'ed ring buffer %s: %w", link.Name, err)
 	}
 
 	// Clear socket stats
-	if _, err := getSocketStats(src.socketFD); err != nil {
-		unix.Close(src.socketFD)
+	if _, err := src.socketFD.GetSocketStats(); err != nil {
+		src.socketFD.Close()
 		return nil, fmt.Errorf("failed to clear AF_PACKET socket stats on %s: %w", link.Name, err)
 	}
 
@@ -119,7 +122,7 @@ func NewRingBufSourceFromLink(link *link.Link, options ...Option) (*RingBufSourc
 
 // NewPacket creates an empty "buffer" package to be used as destination for the NextPacketInto()
 // method. It ensures that a valid packet of appropriate structure / length is created
-func (s *RingBufSource) NewPacket() capture.Packet {
+func (s *Source) NewPacket() capture.Packet {
 	p := make(capture.Packet, 6+s.snapLen)
 	return p
 }
@@ -127,7 +130,7 @@ func (s *RingBufSource) NewPacket() capture.Packet {
 // NextPacket receives the next packet from the wire and returns it. The operation is blocking. In
 // case a non-nil "buffer" Packet is provided it will be populated with the data (and returned). The
 // buffer packet can be reused. Otherwise a new Packet of the Source-specific type is allocated.
-func (s *RingBufSource) NextPacket(pBuf capture.Packet) (capture.Packet, error) {
+func (s *Source) NextPacket(pBuf capture.Packet) (capture.Packet, error) {
 
 	if err := s.nextPacket(); err != nil {
 		return nil, err
@@ -160,7 +163,7 @@ func (s *RingBufSource) NextPacket(pBuf capture.Packet) (capture.Packet, error) 
 // NextIPPacketFn executes the provided function on the next packet received on the wire and only
 // return the ring buffer block to the kernel upon completion of the function. If possible, the
 // operation should provide a zero-copy way of interaction with the payload / metadata.
-func (s *RingBufSource) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType capture.PacketType, ipLayerOffset byte) error) error {
+func (s *Source) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType capture.PacketType, ipLayerOffset byte) error) error {
 
 	if err := s.nextPacket(); err != nil {
 		return err
@@ -172,7 +175,7 @@ func (s *RingBufSource) NextPacketFn(fn func(payload []byte, totalLen uint32, pk
 // NextIPPacket receives the next packet's IP layer from the wire and returns it. The operation is blocking.
 // In case a non-nil "buffer" IPLayer is provided it will be populated with the data (and returned). The
 // buffer packet can be reused. Otherwise a new IPLayer is allocated.
-func (s *RingBufSource) NextIPPacket(pBuf capture.IPLayer) (capture.IPLayer, capture.PacketType, uint32, error) {
+func (s *Source) NextIPPacket(pBuf capture.IPLayer) (capture.IPLayer, capture.PacketType, uint32, error) {
 
 	if err := s.nextPacket(); err != nil {
 		return nil, 0, 0, err
@@ -200,23 +203,23 @@ func (s *RingBufSource) NextIPPacket(pBuf capture.IPLayer) (capture.IPLayer, cap
 }
 
 // Stats returns (and clears) the packet counters of the underlying socket
-func (s *RingBufSource) Stats() (capture.Stats, error) {
+func (s *Source) Stats() (capture.Stats, error) {
 	s.Lock()
 	defer s.Unlock()
 
-	ss, err := getSocketStats(s.socketFD)
+	ss, err := s.socketFD.GetSocketStats()
 	if err != nil {
 		return capture.Stats{}, err
 	}
 	return capture.Stats{
-		PacketsReceived: int(ss.packets),
-		PacketsDropped:  int(ss.drops),
-		QueueFreezes:    int(ss.queueFreezes),
+		PacketsReceived: int(ss.Packets),
+		PacketsDropped:  int(ss.Drops),
+		QueueFreezes:    int(ss.QueueFreezes),
 	}, nil
 }
 
 // Unblock ensures that a potentially ongoing blocking PPOLL is released (returning an ErrCaptureUnblock)
-func (s *RingBufSource) Unblock() error {
+func (s *Source) Unblock() error {
 	if s == nil || s.eventFD < 0 || s.socketFD < 0 {
 		return errors.New("cannot call Unblock() on nil / closed capture source")
 	}
@@ -225,7 +228,7 @@ func (s *RingBufSource) Unblock() error {
 }
 
 // Close stops / closes the capture source
-func (s *RingBufSource) Close() error {
+func (s *Source) Close() error {
 	if s == nil || s.eventFD < 0 || s.socketFD < 0 {
 		return errors.New("cannot call Close() on nil / closed capture source")
 	}
@@ -234,7 +237,7 @@ func (s *RingBufSource) Close() error {
 		return err
 	}
 
-	if err := unix.Close(s.socketFD); err != nil {
+	if err := s.socketFD.Close(); err != nil {
 		return err
 	}
 
@@ -244,7 +247,7 @@ func (s *RingBufSource) Close() error {
 }
 
 // Free releases any pending resources from the capture source (must be called after Close())
-func (s *RingBufSource) Free() error {
+func (s *Source) Free() error {
 	if s == nil {
 		return errors.New("cannot call Free() on nil capture source")
 	}
@@ -260,11 +263,11 @@ func (s *RingBufSource) Free() error {
 }
 
 // Link returns the underlying link
-func (s *RingBufSource) Link() *link.Link {
+func (s *Source) Link() *link.Link {
 	return s.link
 }
 
-func (s *RingBufSource) nextPacket() error {
+func (s *Source) nextPacket() error {
 
 	// If the socket is invalid the capture is obviously closed and we return the respective
 	// error
@@ -352,7 +355,7 @@ fetch:
 	return nil
 }
 
-func (s *RingBufSource) handleEvent() error {
+func (s *Source) handleEvent() error {
 
 	// Read event data / type from the eventFD
 	efdData, err := s.eventFD.ReadEvent()
@@ -371,4 +374,34 @@ func (s *RingBufSource) handleEvent() error {
 	default:
 		return fmt.Errorf("unknown event during poll for next packet: %v", efdData)
 	}
+}
+
+func setupRingBuffer(sd socket.FileDescriptor, tPacketReq tPacketRequest) ([]byte, event.EvtFileDescriptor, error) {
+
+	if sd <= 0 {
+		return nil, -1, errors.New("invalid socket")
+	}
+
+	// Setup event file descriptor used for stopping / unblocking the capture (we start with that to avoid
+	// having to clean up the ring buffer in case the decriptor can't be created
+	eventFD, err := event.New()
+	if err != nil {
+		return nil, -1, fmt.Errorf("failed to setup event file descriptor: %w", err)
+	}
+
+	// Set socket option to use PACKET_RX_RING
+	if err := sd.SetupRingBuffer(unsafe.Pointer(&tPacketReq), unsafe.Sizeof(tPacketReq)); err != nil {
+		return nil, -1, fmt.Errorf("failed to call ring buffer instruction: %w", err)
+	}
+
+	// Setup memory mapping
+	buf, err := unix.Mmap(int(sd), 0, tPacketReq.blockSizeNr(), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
+	if err != nil {
+		return nil, -1, fmt.Errorf("failed to set up mmap ring buffer: %w", err)
+	}
+	if buf == nil {
+		return nil, -1, fmt.Errorf("mmap ring buffer is nil (error: %w)", err)
+	}
+
+	return buf, eventFD, nil
 }

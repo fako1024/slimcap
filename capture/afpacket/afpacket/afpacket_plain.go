@@ -1,3 +1,6 @@
+//go:build linux
+// +build linux
+
 package afpacket
 
 import (
@@ -7,14 +10,19 @@ import (
 	"unsafe"
 
 	"github.com/fako1024/slimcap/capture"
+	"github.com/fako1024/slimcap/capture/afpacket/socket"
 	"github.com/fako1024/slimcap/event"
 	"github.com/fako1024/slimcap/link"
 	"golang.org/x/sys/unix"
 )
 
+const (
+	DefaultSnapLen = (1 << 16) // 64 kiB
+)
+
 // Source denotes a plain AF_PACKET capture source
 type Source struct {
-	socketFD event.FileDescriptor
+	socketFD socket.FileDescriptor
 	eventFD  event.EvtFileDescriptor
 
 	ipLayerOffset byte
@@ -50,7 +58,7 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 	}
 
 	// Setup socket
-	sd, err := setupSocket(link)
+	sd, err := socket.New(link)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup AF_PACKET socket on %s: %w", link.Name, err)
 	}
@@ -66,25 +74,24 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 
 	// Apply functional options, if any
 	for _, opt := range options {
-		if err := opt(src); err != nil {
-			return nil, fmt.Errorf("failed to set option: %w", err)
-		}
+		opt(src)
 	}
+
 	src.buf = make(capture.Packet, src.snapLen+capture.PacketHdrOffset)
 
 	// Setup event file descriptor used for stopping / unblocking the capture
-	src.eventFD, err = event.NewEvtFileDescriptor()
+	src.eventFD, err = event.New()
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup event file descriptor: %w", err)
 	}
 
 	// Set socket options
-	if err := setSocketOptions(sd, link, src.snapLen, src.isPromisc); err != nil {
+	if err := src.socketFD.SetSocketOptions(link, src.snapLen, src.isPromisc); err != nil {
 		return nil, fmt.Errorf("failed to set AF_PACKET socket options on %s: %w", link.Name, err)
 	}
 
 	// Clear socket stats
-	if _, err := getSocketStats(sd); err != nil {
+	if _, err := src.socketFD.GetSocketStats(); err != nil {
 		return nil, fmt.Errorf("failed to clear AF_PACKET socket stats on %s: %w", link.Name, err)
 	}
 
@@ -149,7 +156,7 @@ retry:
 
 	// Receive a packet from the wire (According to PPOLL there should be at least one)
 	// so we do not block
-	n, sockAddr, err := unix.Recvfrom(s.socketFD, s.buf, unix.MSG_DONTWAIT)
+	n, sockAddr, err := unix.Recvfrom(int(s.socketFD), s.buf, unix.MSG_DONTWAIT)
 	if err != nil {
 		return fmt.Errorf("error receiving next packet from socket: %w", err)
 	}
@@ -197,13 +204,13 @@ func (s *Source) Stats() (capture.Stats, error) {
 	s.Lock()
 	defer s.Unlock()
 
-	ss, err := getSocketStats(s.socketFD)
+	ss, err := s.socketFD.GetSocketStats()
 	if err != nil {
 		return capture.Stats{}, err
 	}
 	return capture.Stats{
-		PacketsReceived: int(ss.packets),
-		PacketsDropped:  int(ss.drops),
+		PacketsReceived: int(ss.Packets),
+		PacketsDropped:  int(ss.Drops),
 	}, nil
 }
 
@@ -226,7 +233,7 @@ func (s *Source) Close() error {
 		return err
 	}
 
-	if err := unix.Close(s.socketFD); err != nil {
+	if err := s.socketFD.Close(); err != nil {
 		return err
 	}
 
@@ -280,7 +287,7 @@ retry:
 
 	// Receive a packet from the wire (According to PPOLL there should be at least one)
 	// so we do not block
-	n, sockAddr, err := unix.Recvfrom(s.socketFD, data[6:], unix.MSG_DONTWAIT)
+	n, sockAddr, err := unix.Recvfrom(int(s.socketFD), data[6:], unix.MSG_DONTWAIT)
 	if err != nil {
 		return -1, fmt.Errorf("error receiving next packet from socket: %w", err)
 	}
@@ -329,7 +336,7 @@ retry:
 
 	// Receive a packet from the wire (According to PPOLL there should be at least one)
 	// so we do not block
-	n, sockAddr, err := unix.Recvfrom(s.socketFD, data, 0)
+	n, sockAddr, err := unix.Recvfrom(int(s.socketFD), data, 0)
 	if err != nil {
 		return -1, 0, 0, fmt.Errorf("error receiving next packet from socket: %w", err)
 	}

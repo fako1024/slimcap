@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/fako1024/slimcap/capture/afpacket"
+	"github.com/fako1024/slimcap/capture/afpacket/afring"
 	"go.uber.org/zap"
 )
 
@@ -34,10 +34,10 @@ func main() {
 		logger.Fatal("no interface specified (-d)")
 	}
 
-	listener, err := afpacket.NewRingBufSource(devName,
-		afpacket.CaptureLength(64),
-		afpacket.BufferSize((1<<20), 4),
-		afpacket.Promiscuous(false),
+	listener, err := afring.NewSource(devName,
+		afring.CaptureLength(64),
+		afring.BufferSize((1<<20), 4),
+		afring.Promiscuous(false),
 	)
 	if err != nil {
 		logger.Fatalf("failed to start listener on `%s`: %s", devName, err)
