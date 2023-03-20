@@ -98,7 +98,7 @@ func (c *Capture) Run() (err error) {
 		return err
 	}
 	for _, iface := range links {
-		logger.Infof("Found interface `%s` (idx %d), link type %d, HWAddr `%s`, flags `%s`", iface.Name, iface.Index, iface.LinkType, iface.HardwareAddr, iface.Flags)
+		logger.Infof("Found interface `%s` (idx %d), link type %d, HWAddr `%s`, flags `%s`", iface.Name, iface.Index, iface.Type, iface.HardwareAddr, iface.Flags)
 	}
 
 	// construct list of skipped interfaces

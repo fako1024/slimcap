@@ -85,9 +85,9 @@ func TestCapture(t *testing.T) {
 		snapLen:       64,
 		blockSize:     (1 << 12),
 		nBlocks:       tPacketDefaultBlockNr,
-		ipLayerOffset: link.LinkType(1).IpHeaderOffset(),
+		ipLayerOffset: link.Type(link.TypeEthernet).IpHeaderOffset(),
 		link: &link.Link{
-			LinkType: 1,
+			Type: link.TypeEthernet,
 			Interface: &net.Interface{
 				Index:        1,
 				MTU:          1500,

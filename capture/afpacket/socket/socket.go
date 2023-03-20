@@ -84,7 +84,7 @@ func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, promisc
 	}
 
 	// Set baseline BPF filters to select only packets with a valid IP header and set the correct snaplen
-	if bpfFilterFn := iface.LinkType.BPFFilter(); bpfFilterFn != nil {
+	if bpfFilterFn := iface.Type.BPFFilter(); bpfFilterFn != nil {
 		var (
 			p               unix.SockFprog
 			bfpInstructions = bpfFilterFn(snapLen)
