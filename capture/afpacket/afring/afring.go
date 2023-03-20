@@ -325,8 +325,8 @@ fetch:
 
 		// If there is no next offset, release the TPacketHeader to the kernel and fetch a new one
 		nextPos := s.curTPacketHeader.nextOffset()
-		if nextPos == 0 {
-			if s.curTPacketHeader.nPktsUsed != s.curTPacketHeader.nPkts() {
+		if s.curTPacketHeader.nPktsUsed == s.curTPacketHeader.nPkts() {
+			if nextPos == 0 {
 				fmt.Println(s.link.Name, "WUT (after resetting)?", s.curTPacketHeader.nPktsUsed, s.curTPacketHeader.nPkts())
 			}
 			s.curTPacketHeader.setStatus(tPacketStatusKernel)
