@@ -67,7 +67,7 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 	src := &Source{
 		snapLen:       DefaultSnapLen,
 		socketFD:      sd,
-		ipLayerOffset: link.LinkType.IpHeaderOffset(),
+		ipLayerOffset: link.Type.IpHeaderOffset(),
 		link:          link,
 		Mutex:         sync.Mutex{},
 	}

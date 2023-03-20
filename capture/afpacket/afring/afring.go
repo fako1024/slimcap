@@ -77,7 +77,7 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 		snapLen:       DefaultSnapLen,
 		blockSize:     tPacketDefaultBlockSize,
 		nBlocks:       tPacketDefaultBlockNr,
-		ipLayerOffset: link.LinkType.IpHeaderOffset(),
+		ipLayerOffset: link.Type.IpHeaderOffset(),
 		link:          link,
 		Mutex:         sync.Mutex{},
 	}
