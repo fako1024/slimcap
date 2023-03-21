@@ -32,7 +32,16 @@ type Stats struct {
 }
 
 // PacketType denotes the packet type (indicating traffic direction)
+// https://github.com/torvalds/linux/blob/master/include/uapi/linux/if_packet.h
 type PacketType = byte
+
+const (
+	PacketThisHost  PacketType = iota // PacketThisHost: To us (unicast)
+	PacketBroadcast                   // PacketBroadcast: To all
+	PacketMulticast                   // PacketMulticast: To group
+	PacketOtherHost                   // PacketOtherHost: To someone else
+	PacketOutgoing                    // PacketOutgoing: Outgoing of any type
+)
 
 // IPLayer denotes the subset of bytes representing an IP layer
 type IPLayer []byte
@@ -176,4 +185,9 @@ func (p *Packet) IPLayer() IPLayer {
 // Type denotes the packet type (i.e. the packet direction w.r.t. the interface)
 func (p *Packet) Type() PacketType {
 	return (*p)[0]
+}
+
+// IsInbound denotes if the packet is inbound w.r.t. the interface
+func (p *Packet) IsInbound() bool {
+	return (*p)[0] != PacketOutgoing
 }
