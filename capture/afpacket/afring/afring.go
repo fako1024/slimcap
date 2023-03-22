@@ -73,13 +73,13 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 
 	// Define new source
 	src := &Source{
+		eventHandler:  new(event.Handler),
 		snapLen:       DefaultSnapLen,
 		blockSize:     tPacketDefaultBlockSize,
 		nBlocks:       tPacketDefaultBlockNr,
 		ipLayerOffset: link.Type.IpHeaderOffset(),
 		link:          link,
 		Mutex:         sync.Mutex{},
-		eventHandler:  &event.Handler{},
 	}
 
 	for _, opt := range options {

@@ -208,6 +208,7 @@ func BuildPacket(sip, dip net.IP, sport, dport uint16, proto byte, addPayload []
 			pkt = make([]byte, link.IPLayerOffsetEthernet+ipv4.HeaderLen+len(addPayload))
 			copy(pkt[link.IPLayerOffsetEthernet+ipv4.HeaderLen:], addPayload)
 		}
+		binary.BigEndian.PutUint16(pkt[link.IPLayerOffsetEthernet+2:link.IPLayerOffsetEthernet+4], uint16(totalLen))
 
 		pkt[link.IPLayerOffsetEthernet] = (4 << 4)
 		copy(pkt[link.IPLayerOffsetEthernet+12:link.IPLayerOffsetEthernet+16], sipV4)
@@ -221,10 +222,6 @@ func BuildPacket(sip, dip net.IP, sport, dport uint16, proto byte, addPayload []
 
 		pkt := make([]byte, link.IPLayerOffsetEthernet+ipv6.HeaderLen+4+len(addPayload))
 
-		pkt[link.IPLayerOffsetEthernet] = (6 << 4)
-		copy(pkt[link.IPLayerOffsetEthernet+8:link.IPLayerOffsetEthernet+24], sipV6)
-		copy(pkt[link.IPLayerOffsetEthernet+24:link.IPLayerOffsetEthernet+40], dipV6)
-
 		if sport > 0 && dport > 0 {
 			binary.BigEndian.PutUint16(pkt[link.IPLayerOffsetEthernet+ipv6.HeaderLen:link.IPLayerOffsetEthernet+ipv6.HeaderLen+2], sport)
 			binary.BigEndian.PutUint16(pkt[link.IPLayerOffsetEthernet+ipv6.HeaderLen+2:link.IPLayerOffsetEthernet+ipv6.HeaderLen+4], dport)
@@ -232,6 +229,11 @@ func BuildPacket(sip, dip net.IP, sport, dport uint16, proto byte, addPayload []
 		} else {
 			copy(pkt[link.IPLayerOffsetEthernet+ipv6.HeaderLen:], addPayload)
 		}
+		binary.BigEndian.PutUint16(pkt[link.IPLayerOffsetEthernet+4:link.IPLayerOffsetEthernet+6], uint16(totalLen))
+
+		pkt[link.IPLayerOffsetEthernet] = (6 << 4)
+		copy(pkt[link.IPLayerOffsetEthernet+8:link.IPLayerOffsetEthernet+24], sipV6)
+		copy(pkt[link.IPLayerOffsetEthernet+24:link.IPLayerOffsetEthernet+40], dipV6)
 		pkt[link.IPLayerOffsetEthernet+6] = proto
 
 		return NewIPPacket(nil, pkt, pktType, totalLen, link.IPLayerOffsetEthernet), nil

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"unsafe"
 
+	"github.com/fako1024/slimcap/capture"
 	"golang.org/x/sys/unix"
 )
 
@@ -16,7 +17,9 @@ type MockFileDescriptor struct {
 	FileDescriptor
 
 	// NPacketsProcessed: Packet counter to provide GetSocketStats() functionality
-	NPacketsProcessed int
+	nPacketsProcessed int
+
+	buf chan capture.Packet
 }
 
 // NewMock instantiates a new mock file descriptor
@@ -30,13 +33,14 @@ func NewMock() (MockFileDescriptor, error) {
 
 	return MockFileDescriptor{
 		FileDescriptor: FileDescriptor(sd),
+		buf:            make(chan capture.Packet, 16),
 	}, nil
 }
 
 // IncrementPacketCount allows for simulation of packet / traffic statistics by means
 // of manual counting (to be used during population of a mock data source)
 func (m *MockFileDescriptor) IncrementPacketCount(delta int) {
-	m.NPacketsProcessed += delta
+	m.nPacketsProcessed += delta
 }
 
 // GetSocketStats returns (and resets) socket / traffic statistics
@@ -49,9 +53,9 @@ func (m *MockFileDescriptor) GetSocketStats() (ss TPacketStats, err error) {
 
 	// Retrieve TPacket stats for the socket
 	ss = TPacketStats{
-		Packets: uint32(m.NPacketsProcessed),
+		Packets: uint32(m.nPacketsProcessed),
 	}
-	m.NPacketsProcessed = 0
+	m.nPacketsProcessed = 0
 
 	return
 }
@@ -71,6 +75,14 @@ func (m *MockFileDescriptor) ReleaseSemaphore() (errno unix.Errno) {
 		panic("failed to release mock semaphore (unexpected number of bytes read)")
 	}
 	return
+}
+
+func (m *MockFileDescriptor) Put(pkt capture.Packet) {
+	m.buf <- pkt
+}
+
+func (m *MockFileDescriptor) Get() capture.Packet {
+	return <-m.buf
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////

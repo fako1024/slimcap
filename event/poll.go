@@ -1,6 +1,8 @@
 package event
 
 import (
+	"fmt"
+
 	"github.com/fako1024/slimcap/capture/afpacket/socket"
 	"golang.org/x/sys/unix"
 )
@@ -34,7 +36,7 @@ func (p *Handler) Poll(events int16) (bool, unix.Errno) {
 	}
 
 	// Fast path: If this is not a MockHandler, simply return a regular poll
-	if p.mockFd.FileDescriptor == 0 {
+	if p.mockFd == nil {
 		return poll(pollEvents)
 	}
 
@@ -50,10 +52,25 @@ func (p *Handler) Poll(events int16) (bool, unix.Errno) {
 	return hasEvent, errno
 }
 
+// Recvfrom retrieves data directly from the socket
+func (p *Handler) Recvfrom(buf []byte, flags int) (int, uint8, error) {
+
+	// Fast path: If this is not a MockHandler, simply return a regular read
+	if p.mockFd == nil {
+		return p.recvfrom(buf, flags)
+	}
+
+	// MockHandler logic: return data from buffer
+	pkt := p.mockFd.Get()
+	copy(buf, pkt.Payload())
+
+	return pkt.Len(), pkt.Type(), nil
+}
+
 func (p *Handler) GetSocketStats() (socket.TPacketStats, error) {
 
 	// Fast path: If this is not a MockHandler, simply return a call to GetSocketStats()
-	if p.mockFd.FileDescriptor == 0 {
+	if p.mockFd == nil {
 		return p.Fd.GetSocketStats()
 	}
 
@@ -62,6 +79,23 @@ func (p *Handler) GetSocketStats() (socket.TPacketStats, error) {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
+
+func (p *Handler) recvfrom(buf []byte, flags int) (int, uint8, error) {
+	n, sockAddr, err := unix.Recvfrom(int(p.Fd), buf, flags)
+	if err != nil {
+		return 0, 0, fmt.Errorf("error receiving next packet from socket: %w", err)
+	}
+
+	// Determine the packet type (direction)
+	var pktType uint8
+	if llsa, ok := sockAddr.(*unix.SockaddrLinklayer); ok {
+		pktType = llsa.Pkttype
+	} else {
+		return 0, 0, fmt.Errorf("failed to determine packet type")
+	}
+
+	return n, pktType, nil
+}
 
 func poll(pollEvents [2]unix.PollFd) (bool, unix.Errno) {
 	errno := pollBlock(&pollEvents[0], len(pollEvents))
