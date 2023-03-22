@@ -34,8 +34,7 @@ func (b *ringBuffer) nextTPacketHeader() *tPacketHeader {
 
 // Source denotes an AF_PACKET capture source making use of a ring buffer
 type Source struct {
-	socketFD socket.FileDescriptor
-	eventFD  event.EvtFileDescriptor
+	eventHandler *event.Handler
 
 	ipLayerOffset      byte
 	snapLen            int
@@ -80,6 +79,7 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 		ipLayerOffset: link.Type.IpHeaderOffset(),
 		link:          link,
 		Mutex:         sync.Mutex{},
+		eventHandler:  &event.Handler{},
 	}
 
 	for _, opt := range options {
@@ -94,26 +94,26 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 	}
 
 	// Setup socket
-	src.socketFD, err = socket.New(link)
+	src.eventHandler.Fd, err = socket.New(link)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup AF_PACKET socket on %s: %w", link.Name, err)
 	}
 
 	// Set socket options
-	if err := src.socketFD.SetSocketOptions(link, src.snapLen, src.isPromisc); err != nil {
+	if err := src.eventHandler.Fd.SetSocketOptions(link, src.snapLen, src.isPromisc); err != nil {
 		return nil, fmt.Errorf("failed to set AF_PACKET socket options on %s: %w", link.Name, err)
 	}
 
 	// Setup ring buffer
-	src.ringBuffer.ring, src.eventFD, err = setupRingBuffer(src.socketFD, src.tpReq)
+	src.ringBuffer.ring, src.eventHandler.Efd, err = setupRingBuffer(src.eventHandler.Fd, src.tpReq)
 	if err != nil {
-		src.socketFD.Close()
+		src.eventHandler.Fd.Close()
 		return nil, fmt.Errorf("failed to setup AF_PACKET mmap'ed ring buffer %s: %w", link.Name, err)
 	}
 
 	// Clear socket stats
-	if _, err := src.socketFD.GetSocketStats(); err != nil {
-		src.socketFD.Close()
+	if _, err := src.eventHandler.Fd.GetSocketStats(); err != nil {
+		src.eventHandler.Fd.Close()
 		return nil, fmt.Errorf("failed to clear AF_PACKET socket stats on %s: %w", link.Name, err)
 	}
 
@@ -207,7 +207,7 @@ func (s *Source) Stats() (capture.Stats, error) {
 	s.Lock()
 	defer s.Unlock()
 
-	ss, err := s.socketFD.GetSocketStats()
+	ss, err := s.eventHandler.GetSocketStats()
 	if err != nil {
 		return capture.Stats{}, err
 	}
@@ -220,28 +220,28 @@ func (s *Source) Stats() (capture.Stats, error) {
 
 // Unblock ensures that a potentially ongoing blocking PPOLL is released (returning an ErrCaptureUnblock)
 func (s *Source) Unblock() error {
-	if s == nil || s.eventFD < 0 || s.socketFD < 0 {
+	if s == nil || s.eventHandler.Efd < 0 || s.eventHandler.Fd < 0 {
 		return errors.New("cannot call Unblock() on nil / closed capture source")
 	}
 
-	return s.eventFD.Signal(event.SignalUnblock)
+	return s.eventHandler.Efd.Signal(event.SignalUnblock)
 }
 
 // Close stops / closes the capture source
 func (s *Source) Close() error {
-	if s == nil || s.eventFD < 0 || s.socketFD < 0 {
+	if s == nil || s.eventHandler.Efd < 0 || s.eventHandler.Fd < 0 {
 		return errors.New("cannot call Close() on nil / closed capture source")
 	}
 
-	if err := s.eventFD.Signal(event.SignalStop); err != nil {
+	if err := s.eventHandler.Efd.Signal(event.SignalStop); err != nil {
 		return err
 	}
 
-	if err := s.socketFD.Close(); err != nil {
+	if err := s.eventHandler.Fd.Close(); err != nil {
 		return err
 	}
 
-	s.socketFD = -1
+	s.eventHandler.Fd = -1
 
 	return nil
 }
@@ -251,7 +251,7 @@ func (s *Source) Free() error {
 	if s == nil {
 		return errors.New("cannot call Free() on nil capture source")
 	}
-	if s.socketFD >= 0 {
+	if s.eventHandler.Fd >= 0 {
 		return errors.New("cannot call Free() on open capture source, call Close() first")
 	}
 
@@ -271,7 +271,7 @@ func (s *Source) nextPacket() error {
 
 	// If the socket is invalid the capture is obviously closed and we return the respective
 	// error
-	if s.socketFD < 0 {
+	if s.eventHandler.Fd < 0 {
 		return capture.ErrCaptureStopped
 	}
 
@@ -289,7 +289,7 @@ fetch:
 				s.unblocked = false
 			}
 
-			efdHasEvent, errno := event.Poll(s.eventFD, s.socketFD, unix.POLLIN|unix.POLLERR)
+			efdHasEvent, errno := s.eventHandler.Poll(unix.POLLIN | unix.POLLERR)
 
 			// If an event was received, ensure that the respective error is returned
 			// immediately (setting the `unblocked` marker to bypass checks done before
@@ -326,8 +326,8 @@ fetch:
 		// If there is no next offset, release the TPacketHeader to the kernel and fetch a new one
 		nextPos := s.curTPacketHeader.nextOffset()
 		if s.curTPacketHeader.nPktsUsed == s.curTPacketHeader.nPkts() {
-			if nextPos == 0 {
-				fmt.Println(s.link.Name, "WUT (after resetting)?", s.curTPacketHeader.nPktsUsed, s.curTPacketHeader.nPkts())
+			if nextPos != 0 {
+				fmt.Println(s.link.Name, "WUT (after resetting)?", s.curTPacketHeader.nPktsUsed, s.curTPacketHeader.nPkts(), nextPos)
 			}
 			s.curTPacketHeader.setStatus(tPacketStatusKernel)
 			s.offset = (s.offset + 1) % int(s.tpReq.blockNr)
@@ -358,7 +358,7 @@ fetch:
 func (s *Source) handleEvent() error {
 
 	// Read event data / type from the eventFD
-	efdData, err := s.eventFD.ReadEvent()
+	efdData, err := s.eventHandler.Efd.ReadEvent()
 	if err != nil {
 		return fmt.Errorf("error reading event: %w", err)
 	}

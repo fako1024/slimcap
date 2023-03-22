@@ -147,7 +147,7 @@ type Source interface {
 type Packet []byte
 
 // NewIPPacket instantiates a new IP packet from a given payload and packet type / length
-func NewIPPacket(buf Packet, payload []byte, pktType PacketType, totalLen int) Packet {
+func NewIPPacket(buf Packet, payload []byte, pktType PacketType, totalLen int, ipLayerOffset byte) Packet {
 
 	if buf == nil {
 		buf = make(Packet, len(payload)+PacketHdrOffset)
@@ -155,6 +155,7 @@ func NewIPPacket(buf Packet, payload []byte, pktType PacketType, totalLen int) P
 	buf = buf[:cap(buf)]
 
 	buf[0] = pktType
+	buf[1] = ipLayerOffset
 	*(*uint32)(unsafe.Pointer(&buf[2])) = uint32(totalLen)
 	copy(buf[PacketHdrOffset:], payload)
 
@@ -190,4 +191,51 @@ func (p *Packet) Type() PacketType {
 // IsInbound denotes if the packet is inbound w.r.t. the interface
 func (p *Packet) IsInbound() bool {
 	return (*p)[0] != PacketOutgoing
+}
+
+// BuildPacket provides basic capabilities to construct packets (e.g. for testing purposes)
+func BuildPacket(sip, dip net.IP, sport, dport uint16, proto byte, addPayload []byte, pktType PacketType, totalLen int) (Packet, error) {
+
+	if sipV4, dipV4 := sip.To4(), dip.To4(); sipV4 != nil && dipV4 != nil {
+
+		var pkt []byte
+		if sport > 0 && dport > 0 {
+			pkt = make([]byte, link.IPLayerOffsetEthernet+ipv4.HeaderLen+4+len(addPayload))
+			binary.BigEndian.PutUint16(pkt[link.IPLayerOffsetEthernet+ipv4.HeaderLen:link.IPLayerOffsetEthernet+ipv4.HeaderLen+2], sport)
+			binary.BigEndian.PutUint16(pkt[link.IPLayerOffsetEthernet+ipv4.HeaderLen+2:link.IPLayerOffsetEthernet+ipv4.HeaderLen+4], dport)
+			copy(pkt[link.IPLayerOffsetEthernet+ipv4.HeaderLen+4:], addPayload)
+		} else {
+			pkt = make([]byte, link.IPLayerOffsetEthernet+ipv4.HeaderLen+len(addPayload))
+			copy(pkt[link.IPLayerOffsetEthernet+ipv4.HeaderLen:], addPayload)
+		}
+
+		pkt[link.IPLayerOffsetEthernet] = (4 << 4)
+		copy(pkt[link.IPLayerOffsetEthernet+12:link.IPLayerOffsetEthernet+16], sipV4)
+		copy(pkt[link.IPLayerOffsetEthernet+16:link.IPLayerOffsetEthernet+20], dipV4)
+		pkt[link.IPLayerOffsetEthernet+9] = proto
+
+		return NewIPPacket(nil, pkt, pktType, totalLen, link.IPLayerOffsetEthernet), nil
+	}
+
+	if sipV6, dipV6 := sip.To16(), dip.To16(); sipV6 != nil && dipV6 != nil {
+
+		pkt := make([]byte, link.IPLayerOffsetEthernet+ipv6.HeaderLen+4+len(addPayload))
+
+		pkt[link.IPLayerOffsetEthernet] = (6 << 4)
+		copy(pkt[link.IPLayerOffsetEthernet+8:link.IPLayerOffsetEthernet+24], sipV6)
+		copy(pkt[link.IPLayerOffsetEthernet+24:link.IPLayerOffsetEthernet+40], dipV6)
+
+		if sport > 0 && dport > 0 {
+			binary.BigEndian.PutUint16(pkt[link.IPLayerOffsetEthernet+ipv6.HeaderLen:link.IPLayerOffsetEthernet+ipv6.HeaderLen+2], sport)
+			binary.BigEndian.PutUint16(pkt[link.IPLayerOffsetEthernet+ipv6.HeaderLen+2:link.IPLayerOffsetEthernet+ipv6.HeaderLen+4], dport)
+			copy(pkt[link.IPLayerOffsetEthernet+ipv6.HeaderLen+4:], addPayload)
+		} else {
+			copy(pkt[link.IPLayerOffsetEthernet+ipv6.HeaderLen:], addPayload)
+		}
+		pkt[link.IPLayerOffsetEthernet+6] = proto
+
+		return NewIPPacket(nil, pkt, pktType, totalLen, link.IPLayerOffsetEthernet), nil
+	}
+
+	return nil, errors.New("invalid IPv4 / IPv6 combination / input")
 }

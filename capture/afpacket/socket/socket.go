@@ -27,6 +27,7 @@ type TPacketStats struct {
 	QueueFreezes uint32
 }
 
+// New instantiates a new file decriptor
 func New(iface *link.Link) (FileDescriptor, error) {
 
 	// Setup socket
@@ -46,6 +47,7 @@ func New(iface *link.Link) (FileDescriptor, error) {
 	return FileDescriptor(sd), nil
 }
 
+// GetSocketStats returns (and resets) socket / traffic statistics
 func (sd FileDescriptor) GetSocketStats() (ss TPacketStats, err error) {
 
 	if sd <= 0 {
@@ -60,6 +62,8 @@ func (sd FileDescriptor) GetSocketStats() (ss TPacketStats, err error) {
 	return
 }
 
+// SetSocketOptions sets several socket options on the underlying file descriptor required
+// to perform AF_PACKET capture and retrieval of socket / traffic statistics
 func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, promisc bool) error {
 
 	if sd <= 0 {
@@ -101,13 +105,17 @@ func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, promisc
 	return nil
 }
 
+// SetupRingBuffer peforms a call via setsockopt() to prepare a mmmap'ed ring buffer
 func (sd FileDescriptor) SetupRingBuffer(val unsafe.Pointer, vallen uintptr) error {
 	return setsockopt(sd, unix.SOL_PACKET, unix.PACKET_RX_RING, val, vallen)
 }
 
+// Close closes the file descriptor
 func (sd FileDescriptor) Close() error {
 	return unix.Close(int(sd))
 }
+
+/////////////////////////////////////////////////////////////////////////////////////////
 
 func getsockopt(fd FileDescriptor, level, name int, val unsafe.Pointer, vallen uintptr) error {
 	if _, _, errno := unix.Syscall6(unix.SYS_GETSOCKOPT, uintptr(fd), uintptr(level), uintptr(name), uintptr(val), vallen, 0); errno != 0 {
