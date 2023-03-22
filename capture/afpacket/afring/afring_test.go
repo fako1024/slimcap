@@ -1,47 +1,13 @@
 package afring
 
 import (
-	"encoding/base64"
 	"fmt"
 	"net"
-	"sync"
 	"testing"
-	"time"
 
-	"github.com/fako1024/slimcap/capture/afpacket/socket"
-	"github.com/fako1024/slimcap/event"
-	"github.com/fako1024/slimcap/link"
+	"github.com/fako1024/slimcap/capture"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sys/unix"
 )
-
-type testCase struct {
-	input []byte
-}
-
-func TestWeirdPacket(t *testing.T) {
-
-	cases := []testCase{
-		{
-			input: []byte{0, 0, 48, 0, 0, 0, 0, 0, 0, 0, 242, 3, 0, 0},
-		},
-		{
-			input: []byte{48, 0, 0, 0, 224, 24, 9, 0, 1, 0, 0, 0, 0, 0},
-		},
-		{
-			input: []byte{0, 0, 244, 148, 244, 99, 189, 172, 42, 6, 0, 0, 0, 0},
-		},
-	}
-	_ = cases
-
-	data := []byte{0, 0, 0, 0, 216, 3, 0, 0, 244, 148, 244, 99, 149, 76, 122, 6, 128, 3, 0, 0, 170, 16, 0, 0, 9, 0, 0, 0, 82, 0, 96, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 17, 0, 8, 0, 2, 0, 0, 0, 1, 0, 0, 6, 0, 13, 185, 65, 65, 157, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 160, 206, 200, 221, 249, 17, 0, 13, 185, 65, 65, 157, 8, 0, 69, 0, 16, 156, 158, 102, 64, 0, 56, 6, 3, 19, 129, 143, 4, 238, 10, 0, 0, 102, 0, 80, 173, 126, 226, 237, 187, 74, 54, 20, 53, 87, 128, 16, 0, 85, 161, 113, 0, 0, 1, 1, 8, 10, 58, 133, 200, 6, 239, 243, 196, 46, 0, 0, 0, 0, 0}
-	_ = data
-
-	// pkt := gopacket.NewPacket(data, layers.LayerTypeEthernet, gopacket.Default)
-	// fmt.Println(pkt.String())
-	// fmt.Println(pkt.Data())
-
-}
 
 func TestBlockSizeAlignment(t *testing.T) {
 	var (
@@ -52,7 +18,7 @@ func TestBlockSizeAlignment(t *testing.T) {
 		_, err := newTPacketRequestForBuffer((1 << i), blockNr, snapLen)
 		require.EqualError(t, err, fmt.Sprintf("block size %d not aligned to page size", (1<<i)))
 	}
-	for i := 12; i < 30; i++ {
+	for i := 12; i < 28; i++ {
 		req, err := newTPacketRequestForBuffer((1 << i), blockNr, snapLen)
 		require.Nil(t, err)
 		require.Equal(t, uint32(1<<i), req.blockSize)
@@ -65,66 +31,188 @@ func TestBlockSizeAlignment(t *testing.T) {
 	}
 }
 
-func TestCapture(t *testing.T) {
+func TestOptions(t *testing.T) {
 
-	testRingBlock, err := base64.StdEncoding.DecodeString(testRingBufferBlockA)
-	require.Nil(t, err)
+	t.Run("CaptureLength", func(t *testing.T) {
+		for _, captureLen := range []int{
+			1, 10, 64, 128, DefaultSnapLen, 2 * DefaultSnapLen,
+		} {
+			mockSrc, err := NewMockSource("mock",
+				CaptureLength(captureLen),
+			)
+			require.Nil(t, err)
+			require.Equal(t, captureLen, mockSrc.snapLen)
 
-	var testRing []byte
-	for i := 0; i < tPacketDefaultBlockNr; i++ {
-		testRing = append(testRing, testRingBlock...)
-	}
+			frameSize, err := blockSizeTPacketAlign(tPacketHeaderLen+captureLen, tPacketDefaultBlockSize)
+			require.Nil(t, err)
 
-	fd, err := unix.Eventfd(0, unix.EFD_SEMAPHORE)
-	require.Nil(t, err)
+			require.Equal(t, uint32(frameSize), mockSrc.tpReq.frameSize)
+		}
+	})
 
-	evtFD, err := event.New()
-	require.Nil(t, err)
+	t.Run("Promiscuous", func(t *testing.T) {
+		for _, isPromisc := range []bool{
+			true, false,
+		} {
+			mockSrc, err := NewMockSource("mock",
+				Promiscuous(isPromisc),
+			)
+			require.Nil(t, err)
+			require.Equal(t, isPromisc, mockSrc.isPromisc)
+		}
+	})
 
-	mockRingSource := &Source{
-		snapLen:       64,
-		blockSize:     (1 << 12),
-		nBlocks:       tPacketDefaultBlockNr,
-		ipLayerOffset: link.Type(link.TypeEthernet).IpHeaderOffset(),
-		link: &link.Link{
-			Type: link.TypeEthernet,
-			Interface: &net.Interface{
-				Index:        1,
-				MTU:          1500,
-				Name:         "mock",
-				HardwareAddr: []byte{},
-				Flags:        net.FlagUp,
-			},
-		},
-		Mutex: sync.Mutex{},
-		ringBuffer: ringBuffer{
-			ring: testRing,
-		},
-		socketFD: socket.FileDescriptor(fd),
-		eventFD:  evtFD,
-	}
-	mockRingSource.ringBuffer.tpReq, err = newTPacketRequestForBuffer(mockRingSource.blockSize, mockRingSource.nBlocks, mockRingSource.snapLen)
-	mockRingSource.ringBuffer.tpReq.retire_blk_tov = 1000
-	require.Nil(t, err)
+	t.Run("BufferSize", func(t *testing.T) {
+		for _, blockSize := range []int{
+			4096 * 100, tPacketDefaultBlockSize, 2 * tPacketDefaultBlockSize,
+		} {
+			for _, nBlocks := range []int{
+				1, 2, 4, 64,
+			} {
+				mockSrc, err := NewMockSource("mock",
+					BufferSize(blockSize, nBlocks),
+				)
+				require.Nilf(t, err, "blockSize %d, nBlocks %d", blockSize, nBlocks)
 
-	go func(src *Source) {
-		for {
-			time.Sleep(10 * time.Millisecond)
-			_, err := unix.Write(int(src.socketFD), []byte{1, 0, 0, 0, 0, 0, 0, 0})
-			if err != nil {
-				panic(err)
+				frameSize, err := blockSizeTPacketAlign(tPacketHeaderLen+mockSrc.snapLen, blockSize)
+				require.Nil(t, err)
+				require.Equal(t, uint32(frameSize), mockSrc.tpReq.frameSize)
+				require.Equal(t, uint32(pageSizeAlign(blockSize)), mockSrc.tpReq.blockSize)
+				require.Equal(t, uint32(nBlocks), mockSrc.tpReq.blockNr)
+			}
+		}
+	})
+
+}
+
+func TestCaptureMethods(t *testing.T) {
+
+	t.Run("NextPacket", func(t *testing.T) {
+		testCaptureMethods(t, func(t *testing.T, src *MockSource, i, j uint16) {
+			p, err := src.NextPacket(nil)
+			require.Nil(t, err)
+			validatePacket(t, p, i, j)
+		})
+	})
+
+	t.Run("NextPacketInPlace", func(t *testing.T) {
+		var p capture.Packet
+		testCaptureMethods(t, func(t *testing.T, src *MockSource, i, j uint16) {
+
+			// Use NewPacket() method of source to instantiate a new reusable packet buffer
+			if cap(p) == 0 {
+				p = src.NewPacket()
 			}
 
-			fd, err = unix.Eventfd(0, unix.EFD_SEMAPHORE)
-			mockRingSource.socketFD = socket.FileDescriptor(fd)
+			_, err := src.NextPacket(p)
+			require.Nil(t, err)
+			validatePacket(t, p, i, j)
+		})
+	})
+
+	t.Run("NextIPPacket", func(t *testing.T) {
+		testCaptureMethods(t, func(t *testing.T, src *MockSource, i, j uint16) {
+			p, pktType, totalLen, err := src.NextIPPacket(nil)
+			require.Nil(t, err)
+			validateIPPacket(t, p, pktType, totalLen, i, j)
+		})
+	})
+
+	t.Run("NextIPPacketInPlace", func(t *testing.T) {
+		var p capture.IPLayer
+		testCaptureMethods(t, func(t *testing.T, src *MockSource, i, j uint16) {
+
+			// Use NewPacket() method of source to instantiate a new reusable packet buffer
+			if cap(p) == 0 {
+				pkt := src.NewPacket()
+				p = pkt.IPLayer()
+			}
+
+			_, pktType, totalLen, err := src.NextIPPacket(p)
+			require.Nil(t, err)
+			validateIPPacket(t, p, pktType, totalLen, i, j)
+		})
+	})
+
+	t.Run("NextPacketFn", func(t *testing.T) {
+		testCaptureMethods(t, func(t *testing.T, src *MockSource, i, j uint16) {
+			err := src.NextPacketFn(func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte) error {
+				require.Equal(t, src.link.Type.IpHeaderOffset(), ipLayerOffset)
+				require.Equal(t, uint32(i+j), totalLen)
+				require.Equal(t, byte(i+j)%5, pktType)
+				require.Equal(t, fmt.Sprintf("10.0.0.%d:%d => 10.0.0.%d:%d (proto: %d)", i%254+1, i, j%254+1, j, 6), capture.IPLayer(payload[ipLayerOffset:]).String())
+				return nil
+			})
+			require.Nil(t, err)
+		})
+	})
+}
+
+func testCaptureMethods(t *testing.T, fn func(t *testing.T, src *MockSource, i, j uint16)) {
+
+	// Setup a mock source
+	mockSrc, err := NewMockSource("mock",
+		CaptureLength(64),
+		Promiscuous(false),
+		BufferSize(1024*1024, 5),
+	)
+	require.Nil(t, err)
+
+	// Continuously populate the ring buffer in the background
+	errChan := mockSrc.Run()
+	var n = uint16(100)
+	go func() {
+		for i := uint16(1); i <= n; i++ {
+			for j := uint16(1); j <= n; j++ {
+
+				p, err := capture.BuildPacket(
+					net.ParseIP(fmt.Sprintf("10.0.0.%d", i%254+1)),
+					net.ParseIP(fmt.Sprintf("10.0.0.%d", j%254+1)),
+					i,
+					j,
+					6, []byte{byte(i), byte(j)}, byte(i+j)%5, int(i+j))
+				require.Nil(t, err)
+
+				mockSrc.AddPacket(p)
+			}
 		}
-	}(mockRingSource)
+		mockSrc.FinalizeBlock()
+		mockSrc.Done()
+	}()
 
-	for i := 0; i < 26*tPacketDefaultBlockNr; i++ {
-		p, err := mockRingSource.NextPacket(nil)
-		require.Nil(t, err)
-
-		fmt.Println(p.Len(), p.TotalLen(), p.IPLayer())
+	// Consume data from the source via the respective method
+	for i := uint16(1); i <= n; i++ {
+		for j := uint16(1); j <= n; j++ {
+			fn(t, mockSrc, i, j)
+		}
 	}
 
+	// Block and check for any errors that may have happened in the goroutine
+	require.Nil(t, <-errChan)
+
+	// Evaluate packet statistics
+	stats, err := mockSrc.Stats()
+	require.Nil(t, err)
+	require.Equal(t, capture.Stats{PacketsReceived: int(n * n)}, stats)
+
+	// Close the mock source
+	require.Nil(t, mockSrc.Close())
+}
+
+func validatePacket(t *testing.T, p capture.Packet, i, j uint16) {
+	validateIPPacket(t, p.IPLayer(), p.Type(), p.TotalLen(), i, j)
+}
+
+func validateIPPacket(t *testing.T, p capture.IPLayer, pktType capture.PacketType, totalLen uint32, i, j uint16) {
+	require.Equal(t, uint32(i+j), totalLen)
+	require.Equal(t, byte(i+j)%5, pktType)
+	require.Equal(t, fmt.Sprintf("10.0.0.%d:%d => 10.0.0.%d:%d (proto: %d)", i%254+1, i, j%254+1, j, 6), p.String())
+	c, err := capture.BuildPacket(
+		net.ParseIP(fmt.Sprintf("10.0.0.%d", i%254+1)),
+		net.ParseIP(fmt.Sprintf("10.0.0.%d", j%254+1)),
+		i,
+		j,
+		6, []byte{byte(i), byte(j)}, byte(i+j)%5, int(i+j))
+	require.Nil(t, err)
+	require.Equalf(t, c.IPLayer(), p[:len(c.IPLayer())], "%v vs. %v", c.IPLayer(), p)
 }
