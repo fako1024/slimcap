@@ -2,7 +2,6 @@ package event
 
 import (
 	"errors"
-	"syscall"
 	"testing"
 	"time"
 
@@ -18,8 +17,15 @@ func TestSemaphoreMock(t *testing.T) {
 	errChan := make(chan error)
 	go func(errChan chan error) {
 		for i := 0; i < 6; i++ {
-			hasEvent, err := handler.Poll(unix.POLLIN | unix.POLLERR)
-			require.Equal(t, syscall.Errno(0), err)
+
+		retry:
+			hasEvent, errno := handler.Poll(unix.POLLIN | unix.POLLERR)
+			if errno != 0 {
+				if errno == unix.EINTR {
+					goto retry
+				}
+				errChan <- errors.New(unix.ErrnoName(errno))
+			}
 
 			if hasEvent {
 				errChan <- nil
