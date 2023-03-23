@@ -84,18 +84,9 @@ func NewMockSource(iface string, options ...Option) (*MockSource, error) {
 // yet consumed this function may block
 func (m *MockSource) AddPacket(pkt capture.Packet) {
 
-	tPacketData := make([]byte, 82+m.snapLen)
-
-	*(*uint32)(unsafe.Pointer(&tPacketData[12])) = uint32(m.snapLen)
-	*(*uint32)(unsafe.Pointer(&tPacketData[16])) = uint32(pkt.TotalLen())
-	*(*uint32)(unsafe.Pointer(&tPacketData[24])) = uint32(82) // mac
-
-	tPacketData[58] = pkt.Type()                      // pktType
-	copy(tPacketData[82:82+m.snapLen], pkt.Payload()) // payload
-
 	// If the block buffer is full (or there is no block yet), allocate a new one and populate
 	// the basic TPacketHeader fields
-	if len(m.blockBuf) == 0 || m.blockBufPos+len(tPacketData) > m.blockSize {
+	if len(m.blockBuf) == 0 || m.blockBufPos+82+m.snapLen > m.blockSize {
 		if len(m.blockBuf) > 0 {
 			m.FinalizeBlock()
 		}
@@ -107,13 +98,18 @@ func (m *MockSource) AddPacket(pkt capture.Packet) {
 		*(*uint32)(unsafe.Pointer(&m.blockBuf[16])) = tPacketHeaderLen     // offsetToFirstPkt
 	}
 
+	*(*uint32)(unsafe.Pointer(&m.blockBuf[m.blockBufPos+12])) = uint32(m.snapLen)      // snapLen
+	*(*uint32)(unsafe.Pointer(&m.blockBuf[m.blockBufPos+16])) = uint32(pkt.TotalLen()) // totalLen
+	*(*uint32)(unsafe.Pointer(&m.blockBuf[m.blockBufPos+24])) = uint32(82)             // mac
+	m.blockBuf[m.blockBufPos+58] = pkt.Type()                                          // pktType
+	copy(m.blockBuf[m.blockBufPos+82:m.blockBufPos+82+m.snapLen], pkt.Payload())       // payload
+
 	// If this is not the first package of the block, set the nextOffset of the previous packet
 	if m.blockBufPos > tPacketHeaderLen {
 		*(*uint32)(unsafe.Pointer(&m.blockBuf[m.blockBufPos-82-m.snapLen])) = uint32(82 + m.snapLen) // nextOffset
 	}
-	*(*uint32)(unsafe.Pointer(&m.blockBuf[12])) = *(*uint32)(unsafe.Pointer(&m.blockBuf[12])) + 1 // nPkts
-	copy(m.blockBuf[m.blockBufPos:], tPacketData)                                                 // TPacket data
-	m.blockBufPos += len(tPacketData)
+	*(*uint32)(unsafe.Pointer(&m.blockBuf[12])) = *(*uint32)(unsafe.Pointer(&m.blockBuf[12])) + 1 // nPkts                                            // TPacket data
+	m.blockBufPos += 82 + m.snapLen
 
 	// Similar to the actual kernel ring buffer, we count packets as "seen" when they enter
 	// the pipeline, not when they are consumed from the buffer

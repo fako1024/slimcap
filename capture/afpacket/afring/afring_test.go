@@ -95,7 +95,7 @@ func TestCaptureMethods(t *testing.T) {
 	})
 
 	t.Run("NextPacketInPlace", func(t *testing.T) {
-		var p capture.Packet
+		var p capture.Packet = make(capture.Packet, DefaultSnapLen+6)
 		testCaptureMethods(t, func(t *testing.T, src *MockSource, i, j uint16) {
 
 			// Use NewPacket() method of source to instantiate a new reusable packet buffer
@@ -118,7 +118,7 @@ func TestCaptureMethods(t *testing.T) {
 	})
 
 	t.Run("NextIPPacketInPlace", func(t *testing.T) {
-		var p capture.IPLayer
+		var p capture.IPLayer = make(capture.IPLayer, DefaultSnapLen)
 		testCaptureMethods(t, func(t *testing.T, src *MockSource, i, j uint16) {
 
 			// Use NewPacket() method of source to instantiate a new reusable packet buffer
@@ -144,6 +144,83 @@ func TestCaptureMethods(t *testing.T) {
 			})
 			require.Nil(t, err)
 		})
+	})
+}
+
+func BenchmarkCaptureMethods(b *testing.B) {
+
+	testPacket, err := capture.BuildPacket(
+		net.ParseIP("1.2.3.4"),
+		net.ParseIP("4.5.6.7"),
+		1,
+		2,
+		6, []byte{1, 2}, 0, 128)
+	require.Nil(b, err)
+
+	// Setup a mock source
+	mockSrc, err := NewMockSource("mock",
+		CaptureLength(64),
+		Promiscuous(false),
+	)
+	require.Nil(b, err)
+	mockSrc.Run()
+	go func() {
+		for {
+			mockSrc.AddPacket(testPacket)
+		}
+	}()
+
+	b.Run("NextPacket", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			p, _ := mockSrc.NextPacket(nil)
+			_ = p
+		}
+	})
+
+	b.Run("NextPacketInPlace", func(b *testing.B) {
+		var p capture.Packet = mockSrc.NewPacket()
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = mockSrc.NextPacket(p)
+			_ = p
+		}
+	})
+
+	b.Run("NextIPPacket", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			p, pktType, totalLen, _ := mockSrc.NextIPPacket(nil)
+			_ = p
+			_ = pktType
+			_ = totalLen
+		}
+	})
+
+	b.Run("NextIPPacketInPlace", func(b *testing.B) {
+		pkt := mockSrc.NewPacket()
+		var p capture.IPLayer = pkt.IPLayer()
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, pktType, totalLen, _ := mockSrc.NextIPPacket(p)
+			_ = p
+			_ = pktType
+			_ = totalLen
+		}
+	})
+
+	b.Run("NextPacketFn", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = mockSrc.NextPacketFn(func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte) error {
+				_ = payload
+				_ = totalLen
+				_ = pktType
+				return nil
+			})
+		}
 	})
 }
 

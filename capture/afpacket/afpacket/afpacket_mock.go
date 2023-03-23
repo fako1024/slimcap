@@ -25,71 +25,12 @@ func (m *MockSource) AddPacket(pkt capture.Packet) {
 	m.mockFd.IncrementPacketCount(1)
 }
 
-// var globalSconn net.Conn
-// var globalLconn net.Conn
-
-// func htons(h int) (n int) {
-// 	a := uint16(42)
-// 	if *(*byte)(unsafe.Pointer(&a)) == 42 { // little-endian
-// 		a = uint16(h)
-// 		n = int(a>>8 | a<<8)
-// 	} else { // big-endian
-// 		n = h
-// 	}
-// 	return
-// }
-
 func NewMockSource(iface string, options ...Option) (*MockSource, error) {
 
 	mockHandler, mockFd, err := event.NewMockHandler()
 	if err != nil {
 		return nil, err
 	}
-
-	// os.Remove("/tmp/test.sock")
-	// lis, err := net.Listen("unix", "/tmp/test.sock")
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	// testFd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_DGRAM, htons(unix.ETH_P_ALL))
-	// if err != nil {
-	// 	fmt.Println("Error", err)
-	// 	return nil, err
-	// }
-	// _ = testFd
-
-	// go func() {
-	// 	time.Sleep(100 * time.Millisecond)
-	// 	sconn, err := net.Dial("unix", "/tmp/test.sock")
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// 	globalSconn = sconn
-	// 	select {}
-	// }()
-
-	// conn, err := lis.Accept()
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// globalLconn = conn
-
-	// fd, err := getConnFd(conn.(*net.UnixConn))
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	// conn, err := net.Dial("unix", "/tmp/test.sock")
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// defer conn.Close()
-
-	// evtFD, err := event.New()
-	// if err != nil {
-	// 	return nil, err
-	// }
 
 	src := &Source{
 		snapLen:       DefaultSnapLen,
