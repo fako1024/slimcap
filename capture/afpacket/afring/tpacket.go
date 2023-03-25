@@ -1,7 +1,11 @@
-package afpacket
+//go:build linux
+// +build linux
+
+package afring
 
 import (
 	"fmt"
+	"math"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -56,7 +60,10 @@ func newTPacketRequestForBuffer(blockSize, nBlocks, snapLen int) (req tPacketReq
 	// The frame size is the _minimum_ size of a frame (i.e. individual packet) in a block
 	// It is optimally set to the per-packet TPacket header length plus defined snaplen. However, it must
 	// be a multiple of tPacketAlignment AND blockSize must be a multiple of the frameSize
-	frameSize := blockSizeTPacketAlign(tPacketHeaderLen+snapLen, blockSize)
+	frameSize, err := blockSizeTPacketAlign(tPacketHeaderLen+snapLen, blockSize)
+	if err != nil {
+		return tPacketRequest{}, err
+	}
 
 	return newTPacketRequest(blockSize, nBlocks, frameSize)
 }
@@ -189,14 +196,6 @@ func (t tPacketHeader) payloadCopy() []byte {
 	return cpPayload
 }
 
-// tPacketStats denotes the V3 tpacket_stats structure, c.f.
-// https://github.com/torvalds/linux/blob/master/include/uapi/linux/if_packet.h
-type tPacketStats struct {
-	packets      uint32
-	drops        uint32
-	queueFreezes uint32
-}
-
 func tPacketAlign(x int) int {
 	return int((uint(x) + tPacketAlignment - 1) &^ (tPacketAlignment - 1))
 }
@@ -205,10 +204,28 @@ func pageSizeAlign(x int) int {
 	return int((uint(x) + pageSizeAlignment - 1) &^ (pageSizeAlignment - 1))
 }
 
-func blockSizeTPacketAlign(x, blockSize int) int {
-	for i := uint(x); ; i++ {
-		if i%tPacketAlignment == 0 && uint(blockSize)%i == 0 {
-			return int(i)
-		}
+func blockSizeTPacketAlign(x, blockSize int) (int, error) {
+
+	// If the block size is not aligned there is no solution
+	if uint(blockSize)%tPacketAlignment != 0 {
+		return 0, fmt.Errorf("block size %d not aligned to tPacketAlignment (%d)", blockSize, tPacketAlignment)
 	}
+
+	// Ensure x is aligned to tPacketAlignment (if not, find the next value that is)
+	i := uint(x)
+	if i%tPacketAlignment != 0 {
+		i += tPacketAlignment - (i % tPacketAlignment)
+	}
+
+	// Search for a solution by incrementing i by tPacketAlignment
+	// until a value that satisfies the condition is found
+	// or until the maximum value of uint is reached.
+	for i <= math.MaxUint32 {
+		if uint(blockSize)%i == 0 {
+			return int(i), nil
+		}
+		i += tPacketAlignment
+	}
+
+	return 0, fmt.Errorf("no valid frame size found for capture length %d / block size %d", x, blockSize)
 }

@@ -1,3 +1,6 @@
+//go:build linux
+// +build linux
+
 package afpacket
 
 import (
@@ -7,15 +10,19 @@ import (
 	"unsafe"
 
 	"github.com/fako1024/slimcap/capture"
+	"github.com/fako1024/slimcap/capture/afpacket/socket"
 	"github.com/fako1024/slimcap/event"
 	"github.com/fako1024/slimcap/link"
 	"golang.org/x/sys/unix"
 )
 
+const (
+	DefaultSnapLen = (1 << 16) // 64 kiB
+)
+
 // Source denotes a plain AF_PACKET capture source
 type Source struct {
-	socketFD event.FileDescriptor
-	eventFD  event.EvtFileDescriptor
+	eventHandler *event.Handler
 
 	ipLayerOffset byte
 	snapLen       int
@@ -49,42 +56,42 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 		return nil, fmt.Errorf("link %s is not up", link.Name)
 	}
 
-	// Setup socket
-	sd, err := setupSocket(link)
-	if err != nil {
-		return nil, fmt.Errorf("failed to setup AF_PACKET socket on %s: %w", link.Name, err)
-	}
-
 	// Define new source
 	src := &Source{
+		eventHandler:  new(event.Handler),
 		snapLen:       DefaultSnapLen,
-		socketFD:      sd,
-		ipLayerOffset: link.LinkType.IpHeaderOffset(),
+		ipLayerOffset: link.Type.IpHeaderOffset(),
 		link:          link,
 		Mutex:         sync.Mutex{},
 	}
 
 	// Apply functional options, if any
 	for _, opt := range options {
-		if err := opt(src); err != nil {
-			return nil, fmt.Errorf("failed to set option: %w", err)
-		}
+		opt(src)
 	}
+
 	src.buf = make(capture.Packet, src.snapLen+capture.PacketHdrOffset)
 
+	// Setup socket
+	var err error
+	src.eventHandler.Fd, err = socket.New(link)
+	if err != nil {
+		return nil, fmt.Errorf("failed to setup AF_PACKET socket on %s: %w", link.Name, err)
+	}
+
 	// Setup event file descriptor used for stopping / unblocking the capture
-	src.eventFD, err = event.NewEvtFileDescriptor()
+	src.eventHandler.Efd, err = event.New()
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup event file descriptor: %w", err)
 	}
 
 	// Set socket options
-	if err := setSocketOptions(sd, link, src.snapLen, src.isPromisc); err != nil {
+	if err := src.eventHandler.Fd.SetSocketOptions(link, src.snapLen, src.isPromisc); err != nil {
 		return nil, fmt.Errorf("failed to set AF_PACKET socket options on %s: %w", link.Name, err)
 	}
 
 	// Clear socket stats
-	if _, err := getSocketStats(sd); err != nil {
+	if _, err := src.eventHandler.Fd.GetSocketStats(); err != nil {
 		return nil, fmt.Errorf("failed to clear AF_PACKET socket stats on %s: %w", link.Name, err)
 	}
 
@@ -125,12 +132,12 @@ func (s *Source) NextPacket(pBuf capture.Packet) (capture.Packet, error) {
 // operation should provide a zero-copy way of interaction with the payload / metadata.
 func (s *Source) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType capture.PacketType, ipLayerOffset byte) error) error {
 
-	if s.socketFD == 0 {
+	if s.eventHandler.Fd == 0 {
 		return errors.New("cannot NextPacketFn() on closed capture source")
 	}
 
 retry:
-	efdHasEvent, errno := event.Poll(s.eventFD, s.socketFD, unix.POLLIN|unix.POLLERR)
+	efdHasEvent, errno := s.eventHandler.Poll(unix.POLLIN | unix.POLLERR)
 
 	// If an event was received, ensure that the respective error is returned
 	// immediately (setting the `unblocked` marker to bypass checks done before
@@ -149,17 +156,9 @@ retry:
 
 	// Receive a packet from the wire (According to PPOLL there should be at least one)
 	// so we do not block
-	n, sockAddr, err := unix.Recvfrom(s.socketFD, s.buf, unix.MSG_DONTWAIT)
+	n, pktType, err := s.eventHandler.Recvfrom(s.buf, unix.MSG_DONTWAIT)
 	if err != nil {
 		return fmt.Errorf("error receiving next packet from socket: %w", err)
-	}
-
-	// Determine the packet type (direction)
-	var pktType uint8
-	if llsa, ok := sockAddr.(*unix.SockaddrLinklayer); ok {
-		pktType = llsa.Pkttype
-	} else {
-		return fmt.Errorf("failed to determine packet type")
 	}
 
 	totalLen, err := s.determineTotalPktLen(s.buf)
@@ -197,40 +196,40 @@ func (s *Source) Stats() (capture.Stats, error) {
 	s.Lock()
 	defer s.Unlock()
 
-	ss, err := getSocketStats(s.socketFD)
+	ss, err := s.eventHandler.GetSocketStats()
 	if err != nil {
 		return capture.Stats{}, err
 	}
 	return capture.Stats{
-		PacketsReceived: int(ss.packets),
-		PacketsDropped:  int(ss.drops),
+		PacketsReceived: int(ss.Packets),
+		PacketsDropped:  int(ss.Drops),
 	}, nil
 }
 
 // Unblock ensures that a potentially ongoing blocking PPOLL is released (returning an ErrCaptureUnblock)
 func (s *Source) Unblock() error {
-	if s == nil || s.eventFD < 0 || s.socketFD < 0 {
+	if s == nil || s.eventHandler.Efd < 0 || s.eventHandler.Fd < 0 {
 		return errors.New("cannot call Unblock() on nil / closed capture source")
 	}
 
-	return s.eventFD.Signal(event.SignalUnblock)
+	return s.eventHandler.Efd.Signal(event.SignalUnblock)
 }
 
 // Close stops / closes the capture source
 func (s *Source) Close() error {
-	if s == nil || s.eventFD < 0 || s.socketFD < 0 {
+	if s == nil || s.eventHandler.Efd < 0 || s.eventHandler.Fd < 0 {
 		return errors.New("cannot call Close() on nil / closed capture source")
 	}
 
-	if err := s.eventFD.Signal(event.SignalStop); err != nil {
+	if err := s.eventHandler.Efd.Signal(event.SignalStop); err != nil {
 		return err
 	}
 
-	if err := unix.Close(s.socketFD); err != nil {
+	if err := s.eventHandler.Fd.Close(); err != nil {
 		return err
 	}
 
-	s.socketFD = -1
+	s.eventHandler.Fd = -1
 
 	return nil
 }
@@ -240,7 +239,7 @@ func (s *Source) Free() error {
 	if s == nil {
 		return errors.New("cannot call Free() on nil capture source")
 	}
-	if s.socketFD >= 0 {
+	if s.eventHandler.Fd >= 0 {
 		return errors.New("cannot call Free() on open capture source, call Close() first")
 	}
 
@@ -256,12 +255,12 @@ func (s *Source) Link() *link.Link {
 
 func (s *Source) nextPacketInto(data capture.Packet) (int, error) {
 
-	if s.socketFD == 0 {
+	if s.eventHandler.Fd == 0 {
 		return -1, errors.New("cannot nextPacketInto() on closed capture source")
 	}
 
 retry:
-	efdHasEvent, errno := event.Poll(s.eventFD, s.socketFD, unix.POLLIN|unix.POLLERR)
+	efdHasEvent, errno := s.eventHandler.Poll(unix.POLLIN | unix.POLLERR)
 
 	// If an event was received, ensure that the respective error is returned
 	// immediately (setting the `unblocked` marker to bypass checks done before
@@ -280,17 +279,11 @@ retry:
 
 	// Receive a packet from the wire (According to PPOLL there should be at least one)
 	// so we do not block
-	n, sockAddr, err := unix.Recvfrom(s.socketFD, data[6:], unix.MSG_DONTWAIT)
+	n, pktType, err := s.eventHandler.Recvfrom(data[6:], unix.MSG_DONTWAIT)
 	if err != nil {
 		return -1, fmt.Errorf("error receiving next packet from socket: %w", err)
 	}
-
-	// Determine the packet type (direction)
-	if llsa, ok := sockAddr.(*unix.SockaddrLinklayer); ok {
-		data[0] = llsa.Pkttype
-	} else {
-		return -1, errors.New("failed to determine packet type")
-	}
+	data[0] = pktType
 
 	totalLen, err := s.determineTotalPktLen(data[6:])
 	if err != nil {
@@ -305,12 +298,12 @@ retry:
 
 func (s *Source) nextIPLayerInto(data capture.IPLayer) (int, capture.PacketType, uint32, error) {
 
-	if s.socketFD == 0 {
+	if s.eventHandler.Fd == 0 {
 		return -1, 0, 0, errors.New("cannot nextPacketInto() on closed capture source")
 	}
 
 retry:
-	efdHasEvent, errno := event.Poll(s.eventFD, s.socketFD, unix.POLLIN|unix.POLLERR)
+	efdHasEvent, errno := s.eventHandler.Poll(unix.POLLIN | unix.POLLERR)
 
 	// If an event was received, ensure that the respective error is returned
 	// immediately (setting the `unblocked` marker to bypass checks done before
@@ -329,17 +322,9 @@ retry:
 
 	// Receive a packet from the wire (According to PPOLL there should be at least one)
 	// so we do not block
-	n, sockAddr, err := unix.Recvfrom(s.socketFD, data, 0)
+	n, pktType, err := s.eventHandler.Recvfrom(data, unix.MSG_DONTWAIT)
 	if err != nil {
 		return -1, 0, 0, fmt.Errorf("error receiving next packet from socket: %w", err)
-	}
-
-	// Determine the packet type (direction)
-	var pktType uint8
-	if llsa, ok := sockAddr.(*unix.SockaddrLinklayer); ok {
-		pktType = llsa.Pkttype
-	} else {
-		return -1, 0, 0, fmt.Errorf("failed to determine packet type")
 	}
 
 	totalLen, err := s.determineTotalPktLen(data)
@@ -365,7 +350,7 @@ func copyIPLayer(buf []byte) capture.IPLayer {
 func (s *Source) handleEvent() error {
 
 	// Read event data / type from the eventFD
-	efdData, err := s.eventFD.ReadEvent()
+	efdData, err := s.eventHandler.Efd.ReadEvent()
 	if err != nil {
 		return fmt.Errorf("error reading event: %w", err)
 	}

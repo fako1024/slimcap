@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/fako1024/slimcap/capture/afpacket"
+	"github.com/fako1024/slimcap/capture/afpacket/afring"
 	"go.uber.org/zap"
 )
 
@@ -34,10 +34,10 @@ func main() {
 		logger.Fatal("no interface specified (-d)")
 	}
 
-	listener, err := afpacket.NewRingBufSource(devName,
-		afpacket.CaptureLength(64),
-		afpacket.BufferSize((1<<20), 4),
-		afpacket.Promiscuous(false),
+	listener, err := afring.NewSource(devName,
+		afring.CaptureLength(64),
+		afring.BufferSize((1<<20), 4),
+		afring.Promiscuous(false),
 	)
 	if err != nil {
 		logger.Fatalf("failed to start listener on `%s`: %s", devName, err)
@@ -50,7 +50,7 @@ func main() {
 		if err != nil {
 			logger.Fatalf("error during capture (copy operation) on `%s`: %s", devName, err)
 		}
-		logger.Infof("Received packet with Payload on `%s` (total len %d): %v (inbound: %v)", devName, p.TotalLen(), p.Payload(), p.Type() == 0)
+		logger.Infof("Received packet with Payload on `%s` (total len %d): %v (inbound: %v)", devName, p.TotalLen(), p.Payload(), p.IsInbound())
 	}
 
 	logger.Infof("Reading %d packets from wire (read into existing buffer)...", maxPkts)
@@ -59,13 +59,13 @@ func main() {
 		if p, err = listener.NextPacket(p); err != nil {
 			logger.Fatalf("error during capture (read into existing buffer) on `%s`: %s", devName, err)
 		}
-		logger.Infof("Received packet with Payload on `%s` (total len %d): %v (inbound: %v)", devName, p.TotalLen(), p.Payload(), p.Type() == 0)
+		logger.Infof("Received packet with Payload on `%s` (total len %d): %v (inbound: %v)", devName, p.TotalLen(), p.Payload(), p.IsInbound())
 	}
 
 	logger.Infof("Reading %d packets from wire (zero-copy function call)...", maxPkts)
 	for i := 0; i < maxPkts; i++ {
 		if err := listener.NextPacketFn(func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte) (err error) {
-			logger.Infof("Received packet with Payload on `%s` (total len %d): %v (inbound: %v)", devName, totalLen, payload, pktType == 0)
+			logger.Infof("Received packet with Payload on `%s` (total len %d): %v (inbound: %v)", devName, totalLen, payload, p.IsInbound())
 			return
 		}); err != nil {
 			logger.Fatalf("error during capture (zero-copy function call) on `%s`: %s", devName, err)

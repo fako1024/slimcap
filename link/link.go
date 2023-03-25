@@ -22,19 +22,41 @@ const (
 	LayerOffsetPPPOE = 8
 )
 
-// LinkType denotes the linux interface type
-type LinkType int
+// Type denotes the linux interface type
+type Type int
+
+const (
+
+	// TypeInvalid denotes an invalid link type
+	TypeInvalid Type = iota
+
+	// TypeEthernet denotes a link of type ARPHRD_LOOPBACK
+	TypeEthernet Type = 1
+
+	// TypeLoopback denotes a link of type ARPHRD_ETHER
+	TypeLoopback Type = 772
+
+	// TypePPP denotes a link of type ARPHRD_PPP
+	TypePPP Type = 512
+
+	// TypeGRE denotes a link of type ARPHRD_IPGRE
+	TypeGRE Type = 778
+
+	// TypeNone denotes a link of type ARPHRD_NONE:
+	// Tunnel / anything else (confirmed: Wireguard, OpenVPN)
+	TypeNone Type = 65534
+)
 
 // IpHeaderOffset returns the link / interface specific payload offset for the IP header
 // c.f. https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/include/uapi/linux/if_arp.h
-func (l LinkType) IpHeaderOffset() byte {
+func (l Type) IpHeaderOffset() byte {
 	switch l {
-	case 1, // ARPHRD_ETHER
-		772: // ARPHRD_LOOPBACK
+	case TypeEthernet,
+		TypeLoopback:
 		return IPLayerOffsetEthernet
-	case 512, // ARPHRD_PPP
-		778,   // ARPHRD_IPGRE
-		65534: // ARPHRD_NONE Tunnel / anything else (confirmed: Wireguard, OpenVPN)
+	case TypePPP,
+		TypeGRE,
+		TypeNone:
 		return 0
 	}
 
@@ -43,14 +65,14 @@ func (l LinkType) IpHeaderOffset() byte {
 }
 
 // BPFFilter returns the link / interface specific raw BPF instructions to filter for valid packets only
-func (l LinkType) BPFFilter() func(snapLen int) []bpf.RawInstruction {
+func (l Type) BPFFilter() func(snapLen int) []bpf.RawInstruction {
 	switch l {
-	case 1, // ARPHRD_ETHER
-		772: // ARPHRD_LOOPBACK
+	case TypeEthernet,
+		TypeLoopback:
 		return bpfInstructionsLinkTypeEther
-	case 512, // ARPHRD_PPP
-		778,   // ARPHRD_IPGRE
-		65534: // ARPHRD_NONE Tunnel / anything else (confirmed: Wireguard, OpenVPN)
+	case TypePPP,
+		TypeGRE,
+		TypeNone:
 		return bpfInstructionsLinkTypeRaw
 	}
 
@@ -60,7 +82,7 @@ func (l LinkType) BPFFilter() func(snapLen int) []bpf.RawInstruction {
 
 // Link denotes a link, i.e. an interface (wrapped) and its link type
 type Link struct {
-	LinkType LinkType
+	Type Type
 
 	*net.Interface
 }
@@ -90,7 +112,7 @@ func New(ifName string) (link *Link, err error) {
 	}
 
 	return &Link{
-		LinkType:  linkType,
+		Type:      linkType,
 		Interface: iface,
 	}, nil
 }
@@ -120,7 +142,7 @@ func FindAllLinks() ([]*Link, error) {
 
 		links = append(links, &Link{
 			Interface: &ifaces[i],
-			LinkType:  linkType,
+			Type:      linkType,
 		})
 	}
 
@@ -129,7 +151,7 @@ func FindAllLinks() ([]*Link, error) {
 
 ///////////////////////////
 
-func getLinkType(ifName string) (LinkType, error) {
+func getLinkType(ifName string) (Type, error) {
 
 	sysPath := fmt.Sprintf("/sys/class/net/%s/type", ifName)
 	data, err := os.ReadFile(sysPath)
@@ -146,5 +168,5 @@ func getLinkType(ifName string) (LinkType, error) {
 		return -1, fmt.Errorf("invalid link type read from `%s`: %d", sysPath, val)
 	}
 
-	return LinkType(val), nil
+	return Type(val), nil
 }
