@@ -19,7 +19,8 @@ type MockFileDescriptor struct {
 	// NPacketsProcessed: Packet counter to provide GetSocketStats() functionality
 	nPacketsProcessed int
 
-	buf chan capture.Packet
+	buf       chan capture.Packet
+	noRelease bool
 }
 
 // NewMock instantiates a new mock file descriptor
@@ -60,9 +61,22 @@ func (m *MockFileDescriptor) GetSocketStats() (ss TPacketStats, err error) {
 	return
 }
 
+// SetNoRelease disables reading from the eventFD after data has been consumed (thereby
+// not releasing the block which has to be handled elsewhere instead)
+func (m *MockFileDescriptor) SetNoRelease(enable bool) *MockFileDescriptor {
+	m.noRelease = enable
+	return m
+}
+
 // ReleaseSemaphore consumes from the event fd, releasing the semaphore and indicating
 // that the next event can be sent
 func (m *MockFileDescriptor) ReleaseSemaphore() (errno unix.Errno) {
+
+	// Skip if noRelease mode is set
+	if m.noRelease {
+		return 0
+	}
+
 	var (
 		rVal [8]byte
 		n    int
