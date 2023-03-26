@@ -1,2 +1,7 @@
+# Example binaries
 examples/trace/trace
 examples/dump/dump
+examples/pcap/pcap
+
+# Any test binaries
+*.test
