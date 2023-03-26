@@ -178,7 +178,7 @@ func (s *Source) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType c
 func (s *Source) NextIPPacket(pBuf capture.IPLayer) (capture.IPLayer, capture.PacketType, uint32, error) {
 
 	if err := s.nextPacket(); err != nil {
-		return nil, 0, 0, err
+		return nil, capture.PacketUnknown, 0, err
 	}
 	var (
 		data    capture.IPLayer
