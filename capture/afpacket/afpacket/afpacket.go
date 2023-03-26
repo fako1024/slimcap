@@ -176,7 +176,7 @@ func (s *Source) NextIPPacket(pBuf capture.IPLayer) (capture.IPLayer, capture.Pa
 
 	n, pktType, totalLen, err := s.nextIPLayerInto(s.buf)
 	if err != nil {
-		return nil, 0, 0, err
+		return nil, capture.PacketUnknown, 0, err
 	}
 
 	// If no buffer was provided, return a copy of the packet
@@ -299,7 +299,7 @@ retry:
 func (s *Source) nextIPLayerInto(data capture.IPLayer) (int, capture.PacketType, uint32, error) {
 
 	if s.eventHandler.Fd == 0 {
-		return -1, 0, 0, errors.New("cannot nextPacketInto() on closed capture source")
+		return -1, capture.PacketUnknown, 0, errors.New("cannot nextPacketInto() on closed capture source")
 	}
 
 retry:
@@ -309,7 +309,7 @@ retry:
 	// immediately (setting the `unblocked` marker to bypass checks done before
 	// upon next entry into this method)
 	if efdHasEvent {
-		return -1, 0, 0, s.handleEvent()
+		return -1, capture.PacketUnknown, 0, s.handleEvent()
 	}
 
 	// Handle errors
@@ -317,14 +317,14 @@ retry:
 		if errno == unix.EINTR {
 			goto retry
 		}
-		return -1, 0, 0, fmt.Errorf("error polling for next packet: %d", errno)
+		return -1, capture.PacketUnknown, 0, fmt.Errorf("error polling for next packet: %d", errno)
 	}
 
 	// Receive a packet from the wire (According to PPOLL there should be at least one)
 	// so we do not block
 	n, pktType, err := s.eventHandler.Recvfrom(data, unix.MSG_DONTWAIT)
 	if err != nil {
-		return -1, 0, 0, fmt.Errorf("error receiving next packet from socket: %w", err)
+		return -1, capture.PacketUnknown, 0, fmt.Errorf("error receiving next packet from socket: %w", err)
 	}
 
 	totalLen, err := s.determineTotalPktLen(data)
