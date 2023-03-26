@@ -41,6 +41,8 @@ const (
 	PacketMulticast                   // PacketMulticast: To group
 	PacketOtherHost                   // PacketOtherHost: To someone else
 	PacketOutgoing                    // PacketOutgoing: Outgoing of any type
+
+	PacketUnknown PacketType = 255 // PacketUnknown: Unknown packet type / direction
 )
 
 // IPLayer denotes the subset of bytes representing an IP layer
