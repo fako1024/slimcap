@@ -3,13 +3,15 @@
 
 package afpacket
 
+import "github.com/fako1024/slimcap/link"
+
 // Option denotes a functional option for the Source
 type Option func(*Source)
 
 // CaptureLength sets a snapLen / capture length (max. number of bytes captured per packet)
-func CaptureLength(snapLen int) Option {
+func CaptureLength(strategy link.CaptureLengthStrategy) Option {
 	return func(s *Source) {
-		s.snapLen = snapLen
+		s.snapLen = strategy(s.link)
 	}
 }
 

@@ -116,7 +116,7 @@ func TestMockPipe(t *testing.T) {
 
 		// Setup a mock source
 		mockSrc, err := afring.NewMockSource("mock",
-			afring.CaptureLength(64),
+			afring.CaptureLength(link.CaptureLengthMinimalIPv4Transport),
 		)
 		require.Nil(t, err)
 		errChan := mockSrc.Pipe(src)
