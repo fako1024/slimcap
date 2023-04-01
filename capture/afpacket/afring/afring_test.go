@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/fako1024/slimcap/capture"
+	"github.com/fako1024/slimcap/link"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,16 +36,25 @@ func TestBlockSizeAlignment(t *testing.T) {
 func TestOptions(t *testing.T) {
 
 	t.Run("CaptureLength", func(t *testing.T) {
-		for _, captureLen := range []int{
-			1, 10, 64, 128, DefaultSnapLen, 2 * DefaultSnapLen,
+		for _, captureLen := range []link.CaptureLengthStrategy{
+			link.CaptureLengthFixed(1),
+			link.CaptureLengthFixed(10),
+			link.CaptureLengthFixed(64),
+			link.CaptureLengthFixed(128),
+			link.CaptureLengthFixed(DefaultSnapLen),
+			link.CaptureLengthFixed(2 * DefaultSnapLen),
+			link.CaptureLengthMinimalIPv4Header,
+			link.CaptureLengthMinimalIPv4Transport,
+			link.CaptureLengthMinimalIPv6Header,
+			link.CaptureLengthMinimalIPv6Transport,
 		} {
 			mockSrc, err := NewMockSource("mock",
 				CaptureLength(captureLen),
 			)
 			require.Nil(t, err)
-			require.Equal(t, captureLen, mockSrc.snapLen)
+			require.Equal(t, captureLen(mockSrc.link), mockSrc.snapLen)
 
-			frameSize, err := blockSizeTPacketAlign(tPacketHeaderLen+captureLen, tPacketDefaultBlockSize)
+			frameSize, err := blockSizeTPacketAlign(tPacketHeaderLen+captureLen(mockSrc.link), tPacketDefaultBlockSize)
 			require.Nil(t, err)
 
 			require.Equal(t, uint32(frameSize), mockSrc.tpReq.frameSize)
@@ -89,7 +99,7 @@ func TestFillRingBuffer(t *testing.T) {
 
 	// Setup the original mock source
 	mockSrc, err := NewMockSource("mock",
-		CaptureLength(64),
+		CaptureLength(link.CaptureLengthMinimalIPv4Transport),
 		Promiscuous(false),
 		BufferSize(1024*1024, 5),
 	)
@@ -185,7 +195,7 @@ func TestPipe(t *testing.T) {
 
 	// Setup the original mock source
 	mockSrc, err := NewMockSource("mock",
-		CaptureLength(64),
+		CaptureLength(link.CaptureLengthMinimalIPv4Transport),
 		Promiscuous(false),
 		BufferSize(1024*1024, 5),
 	)
@@ -215,7 +225,7 @@ func TestPipe(t *testing.T) {
 
 	// Setup the mock source used to pipe the first one
 	mockSrc2, err := NewMockSource("mock2",
-		CaptureLength(64),
+		CaptureLength(link.CaptureLengthMinimalIPv4Transport),
 		Promiscuous(false),
 	)
 	require.Nil(t, err)
@@ -255,7 +265,7 @@ func BenchmarkCaptureMethods(b *testing.B) {
 
 	// Setup a mock source
 	mockSrc, err := NewMockSource("mock",
-		CaptureLength(64),
+		CaptureLength(link.CaptureLengthMinimalIPv4Transport),
 		Promiscuous(false),
 	)
 	require.Nil(b, err)
@@ -323,7 +333,7 @@ func testCaptureMethods(t *testing.T, fn func(t *testing.T, src *MockSource, i, 
 
 	// Setup a mock source
 	mockSrc, err := NewMockSource("mock",
-		CaptureLength(64),
+		CaptureLength(link.CaptureLengthMinimalIPv4Transport),
 		Promiscuous(false),
 		BufferSize(1024*1024, 5),
 	)
