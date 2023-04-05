@@ -1,6 +1,8 @@
 package afring
 
 import (
+	"errors"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -13,6 +15,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const mac = 82
+
 // MockSource denotes a fully mocked ring buffer source, behaving just like one
 // Since it wraps a regular Source, it can be used as a stand-in replacement without any further
 // code modifications:
@@ -23,10 +27,9 @@ import (
 type MockSource struct {
 	*Source
 
-	blockBuf    []byte
-	blockBufPos int
+	curBlockPos int
 
-	mockBlocks     chan []byte
+	mockBlocks     chan int
 	mockBlockCount int
 
 	mockFd *socket.MockFileDescriptor
@@ -73,7 +76,7 @@ func NewMockSource(iface string, options ...Option) (*MockSource, error) {
 
 	return &MockSource{
 		Source:     src,
-		mockBlocks: make(chan []byte, src.nBlocks),
+		mockBlocks: make(chan int, src.nBlocks),
 		mockFd:     mockFd,
 	}, nil
 }
@@ -83,80 +86,150 @@ func NewMockSource(iface string, options ...Option) (*MockSource, error) {
 // function of an actual ring buffer. Consequently, if the ring buffer is full and elements not
 // yet consumed this function may block
 func (m *MockSource) AddPacket(pkt capture.Packet) {
+	m.addPacket(pkt.Payload(), pkt.TotalLen(), pkt.Type(), 0)
+}
+
+// AddPacketFromSource consumes a single packet from the provided source and adds it to the source
+// This can happen prior to calling run or continuously while consuming data, mimicking the
+// function of an actual ring buffer. Consequently, if the ring buffer is full and elements not
+// yet consumed this function may block
+func (m *MockSource) AddPacketFromSource(src capture.Source) error {
+	return src.NextPacketFn(m.addPacket)
+}
+
+func (m *MockSource) addPacket(payload []byte, totalLen uint32, pktType, ipLayerOffset byte) error {
+	thisBlock := m.mockBlockCount % m.nBlocks
 
 	// If the block buffer is full (or there is no block yet), allocate a new one and populate
 	// the basic TPacketHeader fields
-	if len(m.blockBuf) == 0 || m.blockBufPos+82+m.snapLen > m.blockSize {
-		if len(m.blockBuf) > 0 {
-			m.FinalizeBlock()
+	if m.curBlockPos == 0 || m.curBlockPos+mac+m.snapLen > m.blockSize {
+		if m.curBlockPos > 0 {
+			m.FinalizeBlock(false)
 		}
-		m.blockBuf = make([]byte, m.blockSize)
-		m.blockBufPos = tPacketHeaderLen
+		m.curBlockPos = tPacketHeaderLen
+		thisBlock = m.mockBlockCount % m.nBlocks
 
-		*(*uint32)(unsafe.Pointer(&m.blockBuf[0])) = 3                     // version
-		*(*uint32)(unsafe.Pointer(&m.blockBuf[8])) = unix.TP_STATUS_KERNEL // status
-		*(*uint32)(unsafe.Pointer(&m.blockBuf[16])) = tPacketHeaderLen     // offsetToFirstPkt
+		*(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[thisBlock*m.blockSize])) = 3                       // version
+		*(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[thisBlock*m.blockSize+8])) = unix.TP_STATUS_KERNEL // status
+		*(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[thisBlock*m.blockSize+16])) = tPacketHeaderLen     // offsetToFirstPkt
 	}
 
-	*(*uint32)(unsafe.Pointer(&m.blockBuf[m.blockBufPos+12])) = uint32(m.snapLen)      // snapLen
-	*(*uint32)(unsafe.Pointer(&m.blockBuf[m.blockBufPos+16])) = uint32(pkt.TotalLen()) // totalLen
-	*(*uint32)(unsafe.Pointer(&m.blockBuf[m.blockBufPos+24])) = uint32(82)             // mac
-	m.blockBuf[m.blockBufPos+58] = pkt.Type()                                          // pktType
-	copy(m.blockBuf[m.blockBufPos+82:m.blockBufPos+82+m.snapLen], pkt.Payload())       // payload
+	block := m.ringBuffer.ring[thisBlock*m.blockSize : thisBlock*m.blockSize+m.blockSize]
+
+	*(*uint32)(unsafe.Pointer(&block[m.curBlockPos+12])) = uint32(m.snapLen) // snapLen
+	*(*uint32)(unsafe.Pointer(&block[m.curBlockPos+16])) = totalLen          // totalLen
+	*(*uint32)(unsafe.Pointer(&block[m.curBlockPos+24])) = uint32(mac)       // mac
+	block[m.curBlockPos+58] = pktType                                        // pktType
+	copy(block[m.curBlockPos+mac:m.curBlockPos+mac+m.snapLen], payload)      // payload
 
 	// If this is not the first package of the block, set the nextOffset of the previous packet
-	if m.blockBufPos > tPacketHeaderLen {
-		*(*uint32)(unsafe.Pointer(&m.blockBuf[m.blockBufPos-82-m.snapLen])) = uint32(82 + m.snapLen) // nextOffset
+	if m.curBlockPos > tPacketHeaderLen {
+		*(*uint32)(unsafe.Pointer(&block[m.curBlockPos-mac-m.snapLen])) = uint32(mac + m.snapLen) // nextOffset
 	}
-	*(*uint32)(unsafe.Pointer(&m.blockBuf[12])) = *(*uint32)(unsafe.Pointer(&m.blockBuf[12])) + 1 // nPkts                                            // TPacket data
-	m.blockBufPos += 82 + m.snapLen
+	*(*uint32)(unsafe.Pointer(&block[12])) = *(*uint32)(unsafe.Pointer(&block[12])) + 1 // nPkts                                            // TPacket data
+	m.curBlockPos += mac + m.snapLen
 
 	// Similar to the actual kernel ring buffer, we count packets as "seen" when they enter
 	// the pipeline, not when they are consumed from the buffer
 	m.mockFd.IncrementPacketCount(1)
+	return nil
 }
 
 // FinalizeBlock flushes the current block buffer and puts it onto the channel
 // for consumption
-func (m *MockSource) FinalizeBlock() {
-	if len(m.blockBuf) > 0 {
-		m.mockBlocks <- m.blockBuf
+func (m *MockSource) FinalizeBlock(force bool) {
+	if m.curBlockPos > 0 || force {
+		m.mockBlocks <- m.mockBlockCount
+		m.curBlockPos = 0
+		m.mockBlockCount++
 	}
+}
+
+// CanAddPackets returns if any more packets can be added to the mock source (allowing to
+// non-blockingly assert if the buffer / channel is full or will be on the next operation)
+func (m *MockSource) CanAddPackets() bool {
+	return len(m.mockBlocks) != m.nBlocks &&
+		(len(m.mockBlocks) != m.nBlocks-1 || m.curBlockPos+mac+m.snapLen <= m.blockSize)
+}
+
+// Pipe continuously pipes packets from the provided source through this one, mimicking
+// the ring buffer / TPacketHeader block retirement setting for population of the ring buffer
+func (m *MockSource) Pipe(src capture.Source) chan error {
+	errChan := make(chan error)
+	go func(errs chan error) {
+		pipe := make(chan error)
+
+		// Run the next capture attempt in a goroutine to allow timing out the operation
+		for {
+			go func() {
+				pipe <- m.AddPacketFromSource(src)
+			}()
+
+		retry:
+			select {
+			// Simulate TPacket block retirement
+			case <-time.After(time.Duration(m.ringBuffer.tpReq.retire_blk_tov) * time.Millisecond):
+
+				// To ensure the process cannot enter a deadlock, block finalization is forced (just as
+				// it would be the case for the actual ring buffer) even if no packets were received
+				m.FinalizeBlock(true)
+				goto retry
+
+			case err := <-pipe:
+				if err != nil {
+					if errors.Is(err, io.EOF) || errors.Is(err, capture.ErrCaptureStopped) {
+						m.FinalizeBlock(false)
+						m.Done()
+						return
+					}
+					errs <- err
+					return
+				}
+			}
+		}
+	}(errChan)
+	go m.run(errChan)
+
+	return errChan
 }
 
 // Run executes processing of packets in the background, mimicking the function of an actual kernel
 // packet ring buffer
 func (m *MockSource) Run() chan error {
 	errChan := make(chan error)
-	go func() {
+	go m.run(errChan)
 
-		defer close(errChan)
+	return errChan
+}
 
-		for block := range m.mockBlocks {
+// RunNoDrain acts as a high-throughput mode to allow continuous reading the same data currently in the
+// mock buffer without consuming it and with minimal overhead from handling the mock socket / semaphore
+// It is intended to be used in benchmarks using the mock source to minimize measurement noise from the
+// mock implementation itself
+func (m *MockSource) RunNoDrain(releaseInterval time.Duration) chan error {
 
-			// Simulate TPacket block retirement
-			time.Sleep(time.Duration(m.ringBuffer.tpReq.retire_blk_tov) * time.Millisecond)
-			thisBlock := m.mockBlockCount % m.nBlocks
+	m.FinalizeBlock(false)
 
-			// Ensure that the packet has already been consumed to avoid race conditions (since there is no
-			// feedback from the receiver we can only poll until the packet status is not TP_STATUS_USER)
-			for *(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[thisBlock*m.blockSize+8])) == unix.TP_STATUS_USER {
-				time.Sleep(100 * time.Millisecond)
-			}
+	errChan := make(chan error)
+	go func(errs chan error) {
 
-			// Store the next block in the ring buffer and mark it to be available to the reader
-			copy(m.ringBuffer.ring[thisBlock*m.blockSize:thisBlock*m.blockSize+m.blockSize], block)
-			*(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[thisBlock*m.blockSize+8])) = unix.TP_STATUS_USER
-
-			// Queue / trigger an event equivalent to receiving a new block via the PPOLL syscall
-			if err := event.ToMockHandler(m.eventHandler).SignalAvailableData(); err != nil {
-				errChan <- err
-				return
-			}
-
-			m.mockBlockCount++
+		// Queue / trigger a single event equivalent to receiving a new block via the PPOLL syscall and
+		// instruct the mock socket to not release the semaphore. That way data can be consumed immediately
+		// at all times
+		m.mockFd.SetNoRelease(true)
+		if err := event.ToMockHandler(m.eventHandler).SignalAvailableData(); err != nil {
+			errs <- err
+			return
 		}
-	}()
+
+		// Continuously mark all blocks as available to the user at the given interval
+		for {
+			for i := 0; i < m.nBlocks; i++ {
+				m.markBlock(i, unix.TP_STATUS_USER)
+				time.Sleep(releaseInterval)
+			}
+		}
+	}(errChan)
 
 	return errChan
 }
@@ -165,4 +238,41 @@ func (m *MockSource) Run() chan error {
 // filling routine / channel to terminate once all packets have been written to the ring buffer
 func (m *MockSource) Done() {
 	close(m.mockBlocks)
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+
+func (m *MockSource) run(errChan chan error) {
+	defer close(errChan)
+
+	for block := range m.mockBlocks {
+
+		thisBlock := block % m.nBlocks
+
+		// Ensure that the packet has already been consumed to avoid race conditions (since there is no
+		// feedback from the receiver we can only poll until the packet status is not TP_STATUS_USER)
+		for m.getBlockStatus(thisBlock) == unix.TP_STATUS_USER {
+			time.Sleep(100 * time.Millisecond)
+		}
+
+		// Store the next block in the ring buffer and mark it to be available to the reader
+		// copy(m.ringBuffer.ring[thisBlock*m.blockSize:thisBlock*m.blockSize+m.blockSize], block)
+		m.markBlock(thisBlock, unix.TP_STATUS_USER)
+
+		// Queue / trigger an event equivalent to receiving a new block via the PPOLL syscall
+		if err := event.ToMockHandler(m.eventHandler).SignalAvailableData(); err != nil {
+			errChan <- err
+			return
+		}
+	}
+
+	errChan <- nil
+}
+
+func (m *MockSource) getBlockStatus(n int) (status uint32) {
+	return *(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[n*m.blockSize+8]))
+}
+
+func (m *MockSource) markBlock(n int, status uint32) {
+	*(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[n*m.blockSize+8])) = status
 }

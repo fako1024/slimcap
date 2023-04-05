@@ -45,7 +45,13 @@ func ToMockHandler(h *Handler) *MockHandler {
 // SignalAvailableData sets the semaphore of the underlying event file descriptor,
 // indicating that data is available (and releasing the block)
 func (m *MockHandler) SignalAvailableData() error {
-	n, err := unix.Write(int(m.mockFd.FileDescriptor), []byte{1, 0, 0, 0, 0, 0, 0, 0})
+	return m.write([]byte{1, 0, 0, 0, 0, 0, 0, 0})
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+
+func (m *MockHandler) write(data []byte) error {
+	n, err := unix.Write(int(m.mockFd.FileDescriptor), data)
 	if err != nil {
 		return fmt.Errorf("failed to signal new data on mock file descriptor: %w", err)
 	}

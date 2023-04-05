@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/fako1024/slimcap/capture/afpacket/afring"
+	"github.com/fako1024/slimcap/link"
 	"go.uber.org/zap"
 )
 
@@ -35,7 +36,7 @@ func main() {
 	}
 
 	listener, err := afring.NewSource(devName,
-		afring.CaptureLength(64),
+		afring.CaptureLength(link.CaptureLengthFixed(64)),
 		afring.BufferSize((1<<20), 4),
 		afring.Promiscuous(false),
 	)
