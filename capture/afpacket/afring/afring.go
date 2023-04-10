@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	DefaultSnapLen = (1 << 16) // 64 kiB
+	DefaultSnapLen = (1 << 16) // DefaultSnapLen : 64 kiB
 )
 
 type ringBuffer struct {
@@ -56,7 +56,7 @@ func NewSource(iface string, options ...Option) (*Source, error) {
 	}
 	link, err := link.New(iface)
 	if err != nil {
-		return nil, fmt.Errorf("failed to set up link on %s: %s", iface, err)
+		return nil, fmt.Errorf("failed to set up link on %s: %w", iface, err)
 	}
 
 	return NewSourceFromLink(link, options...)
@@ -120,16 +120,17 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 	return src, nil
 }
 
-// NewPacket creates an empty "buffer" package to be used as destination for the NextPacketInto()
-// method. It ensures that a valid packet of appropriate structure / length is created
+// NewPacket creates an empty "buffer" packet to be used as destination for the NextPacket() / NextPayload() /
+// NextIPPacket() methods (the latter two by calling .Payload() / .IPLayer() on the created buffer). It ensures
+// that a valid packet of appropriate structure / length is created
 func (s *Source) NewPacket() capture.Packet {
 	p := make(capture.Packet, 6+s.snapLen)
 	return p
 }
 
-// NextPacket receives the next packet from the wire and returns it. The operation is blocking. In
+// NextPacket receives the next packet from the source and returns it. The operation is blocking. In
 // case a non-nil "buffer" Packet is provided it will be populated with the data (and returned). The
-// buffer packet can be reused. Otherwise a new Packet of the Source-specific type is allocated.
+// buffer packet can be reused. Otherwise a new Packet is allocated.
 func (s *Source) NextPacket(pBuf capture.Packet) (capture.Packet, error) {
 
 	if err := s.nextPacket(); err != nil {
@@ -160,21 +161,52 @@ func (s *Source) NextPacket(pBuf capture.Packet) (capture.Packet, error) {
 	return data, nil
 }
 
-// NextIPPacketFn executes the provided function on the next packet received on the wire and only
-// return the ring buffer block to the kernel upon completion of the function. If possible, the
-// operation should provide a zero-copy way of interaction with the payload / metadata.
-func (s *Source) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType capture.PacketType, ipLayerOffset byte) error) error {
+// NextPayload receives the raw payload of the next packet from the source and returns it. The operation is blocking.
+// In case a non-nil "buffer" byte slice / payload is provided it will be populated with the data (and returned).
+// The buffer can be reused. Otherwise a new byte slice / payload is allocated.
+func (s *Source) NextPayload(pBuf []byte) ([]byte, capture.PacketType, uint32, error) {
 
 	if err := s.nextPacket(); err != nil {
-		return err
+		return nil, capture.PacketUnknown, 0, err
+	}
+	var (
+		data    []byte
+		snapLen = s.curTPacketHeader.snapLen()
+	)
+
+	// If a buffer was provided, et the correct length of the buffer and populate it
+	// Otherwise, allocate a new byte slice - then populate the packet
+	if pBuf != nil {
+		data = s.curTPacketHeader.payloadNoCopyAtOffset(0, snapLen)
+	} else {
+		data = make([]byte, snapLen)
+		s.curTPacketHeader.payloadCopyPutAtOffset(data, 0, snapLen)
 	}
 
-	return fn(s.curTPacketHeader.payloadNoCopy(), s.curTPacketHeader.pktLen(), s.curTPacketHeader.packetType(), s.ipLayerOffset)
+	if int(snapLen) < len(data) {
+		data = data[:snapLen]
+	}
+
+	return data, s.curTPacketHeader.packetType(), s.curTPacketHeader.pktLen(), nil
 }
 
-// NextIPPacket receives the next packet's IP layer from the wire and returns it. The operation is blocking.
-// In case a non-nil "buffer" IPLayer is provided it will be populated with the data (and returned). The
-// buffer packet can be reused. Otherwise a new IPLayer is allocated.
+// NextPayloadZeroCopy receives the raw payload of the next packet from the source and returns it. The operation is blocking.
+// The returned payload provides direct zero-copy access to the underlying data source (e.g. a ring buffer).
+func (s *Source) NextPayloadZeroCopy() ([]byte, capture.PacketType, uint32, error) {
+
+	if err := s.nextPacket(); err != nil {
+		return nil, capture.PacketUnknown, 0, err
+	}
+
+	return s.curTPacketHeader.payloadNoCopyAtOffset(0, s.curTPacketHeader.snapLen()),
+		s.curTPacketHeader.packetType(),
+		s.curTPacketHeader.pktLen(),
+		nil
+}
+
+// NextIPPacket receives the IP layer of the next packet from the source and returns it. The operation is blocking.
+// In case a non-nil "buffer" IPLayer is provided it will be populated with the data (and returned).
+// The buffer can be reused. Otherwise a new IPLayer is allocated.
 func (s *Source) NextIPPacket(pBuf capture.IPLayer) (capture.IPLayer, capture.PacketType, uint32, error) {
 
 	if err := s.nextPacket(); err != nil {
@@ -182,7 +214,7 @@ func (s *Source) NextIPPacket(pBuf capture.IPLayer) (capture.IPLayer, capture.Pa
 	}
 	var (
 		data    capture.IPLayer
-		snapLen = int(s.curTPacketHeader.snapLen()) - int(s.ipLayerOffset)
+		snapLen = s.curTPacketHeader.snapLen()
 	)
 
 	// If a buffer was provided, et the correct length of the buffer and populate it
@@ -194,15 +226,41 @@ func (s *Source) NextIPPacket(pBuf capture.IPLayer) (capture.IPLayer, capture.Pa
 	}
 
 	// Populate the packet
-	s.curTPacketHeader.payloadCopyPutAtOffset(data, uint32(s.ipLayerOffset))
-	if snapLen < len(data) {
-		data = data[:snapLen]
+	s.curTPacketHeader.payloadCopyPutAtOffset(data, uint32(s.ipLayerOffset), snapLen)
+	if ipLayerSnaplen := snapLen - uint32(s.ipLayerOffset); int(ipLayerSnaplen) < len(data) {
+		data = data[:ipLayerSnaplen]
 	}
 
 	return data, s.curTPacketHeader.packetType(), s.curTPacketHeader.pktLen(), nil
 }
 
-// Stats returns (and clears) the packet counters of the underlying socket
+// NextIPPacketZeroCopy receives the IP layer of the next packet from the source and returns it. The operation is blocking.
+// The returned IPLayer provides direct zero-copy access to the underlying data source (e.g. a ring buffer).
+func (s *Source) NextIPPacketZeroCopy() (capture.IPLayer, capture.PacketType, uint32, error) {
+
+	if err := s.nextPacket(); err != nil {
+		return nil, capture.PacketUnknown, 0, err
+	}
+
+	return s.curTPacketHeader.payloadNoCopyAtOffset(uint32(s.ipLayerOffset), s.curTPacketHeader.snapLen()),
+		s.curTPacketHeader.packetType(),
+		s.curTPacketHeader.pktLen(),
+		nil
+}
+
+// NextPacketFn executes the provided function on the next packet received on the source. If possible, the
+// operation should provide a zero-copy way of interaction with the payload / metadata. All operations on the data
+// must be completed prior to any subsequent call to any Next*() method.
+func (s *Source) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType capture.PacketType, ipLayerOffset byte) error) error {
+
+	if err := s.nextPacket(); err != nil {
+		return err
+	}
+
+	return fn(s.curTPacketHeader.payloadNoCopy(), s.curTPacketHeader.pktLen(), s.curTPacketHeader.packetType(), s.ipLayerOffset)
+}
+
+// Stats returns (and clears) the packet counters of the underlying source
 func (s *Source) Stats() (capture.Stats, error) {
 	s.Lock()
 	defer s.Unlock()
@@ -218,7 +276,8 @@ func (s *Source) Stats() (capture.Stats, error) {
 	}, nil
 }
 
-// Unblock ensures that a potentially ongoing blocking PPOLL is released (returning an ErrCaptureUnblock)
+// Unblock ensures that a potentially ongoing blocking poll operation is released (returning an ErrCaptureUnblock from
+// any potentially ongoing call to Next*() that might currently be blocked)
 func (s *Source) Unblock() error {
 	if s == nil || s.eventHandler.Efd < 0 || s.eventHandler.Fd < 0 {
 		return errors.New("cannot call Unblock() on nil / closed capture source")
@@ -303,13 +362,13 @@ fetch:
 				if errno == unix.EINTR {
 					continue
 				}
-				return fmt.Errorf("error polling for next packet: %d", errno)
+				return fmt.Errorf("error polling for next packet: %w", errno)
 			}
 
 			// Handle rare cases of runaway packets
 			if s.curTPacketHeader.getStatus()&tPacketStatusCopy != 0 {
-				if s.curTPacketHeader.nPktsUsed != s.curTPacketHeader.nPkts() {
-					fmt.Println(s.link.Name, "WUT (after runaway packet)?", s.curTPacketHeader.nPktsUsed, s.curTPacketHeader.nPkts())
+				if s.curTPacketHeader.nPktsLeft != 0 {
+					fmt.Println(s.link.Name, "WUT (after runaway packet)?", s.curTPacketHeader.nPktsLeft)
 				}
 				s.curTPacketHeader.setStatus(tPacketStatusKernel)
 				s.offset = (s.offset + 1) % int(s.tpReq.frameNr)
@@ -319,15 +378,17 @@ fetch:
 			}
 		}
 
-		// After fetching a new TPacketHeader, set the position of the first packet
+		// After fetching a new TPacketHeader, set the position of the first packet and the number of packets
+		// in this TPacketHeader
 		s.curTPacketHeader.ppos = s.curTPacketHeader.offsetToFirstPkt()
+		s.curTPacketHeader.nPktsLeft = s.curTPacketHeader.nPkts()
 	} else {
 
 		// If there is no next offset, release the TPacketHeader to the kernel and fetch a new one
 		nextPos := s.curTPacketHeader.nextOffset()
-		if s.curTPacketHeader.nPktsUsed == s.curTPacketHeader.nPkts() {
+		if s.curTPacketHeader.nPktsLeft == 0 {
 			if nextPos != 0 {
-				fmt.Println(s.link.Name, "WUT (after resetting)?", s.curTPacketHeader.nPktsUsed, s.curTPacketHeader.nPkts(), nextPos)
+				fmt.Println(s.link.Name, "WUT (after resetting)?", s.curTPacketHeader.nPktsLeft, nextPos)
 			}
 			s.curTPacketHeader.setStatus(tPacketStatusKernel)
 			s.offset = (s.offset + 1) % int(s.tpReq.blockNr)
@@ -351,7 +412,7 @@ fetch:
 		goto fetch
 	}
 
-	s.curTPacketHeader.nPktsUsed++
+	s.curTPacketHeader.nPktsLeft--
 	return nil
 }
 

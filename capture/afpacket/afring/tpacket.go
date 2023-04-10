@@ -95,7 +95,7 @@ func (t tPacketRequest) blockSizeNr() int {
 type tPacketHeader struct {
 	data      []byte
 	ppos      uint32
-	nPktsUsed uint32
+	nPktsLeft uint32
 }
 
 // / -> Block Descriptor
@@ -179,14 +179,19 @@ func (t tPacketHeader) payloadNoCopy() []byte {
 	return t.data[t.ppos+mac : t.ppos+mac+t.snapLen()]
 }
 
+func (t tPacketHeader) payloadNoCopyAtOffset(offset, to uint32) []byte {
+	mac := uint32(*(*uint16)(unsafe.Pointer(&t.data[t.ppos+24])))
+	return t.data[t.ppos+mac+offset : t.ppos+mac+to]
+}
+
 func (t tPacketHeader) payloadCopyPut(data []byte) {
 	mac := uint32(*(*uint16)(unsafe.Pointer(&t.data[t.ppos+24])))
 	copy(data, t.data[t.ppos+mac:t.ppos+mac+t.snapLen()])
 }
 
-func (t tPacketHeader) payloadCopyPutAtOffset(data []byte, offset uint32) {
+func (t tPacketHeader) payloadCopyPutAtOffset(data []byte, offset, to uint32) {
 	mac := uint32(*(*uint16)(unsafe.Pointer(&t.data[t.ppos+24])))
-	copy(data, t.data[t.ppos+mac+offset:t.ppos+mac+t.snapLen()])
+	copy(data, t.data[t.ppos+mac+offset:t.ppos+mac+to])
 }
 
 func (t tPacketHeader) payloadCopy() []byte {

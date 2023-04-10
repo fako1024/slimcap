@@ -153,6 +153,38 @@ func TestCaptureMethods(t *testing.T) {
 		})
 	})
 
+	t.Run("NextPayload", func(t *testing.T) {
+		testCaptureMethods(t, func(t *testing.T, src *MockSource, i, j uint16) {
+			p, pktType, totalLen, err := src.NextPayload(nil)
+			require.Nil(t, err)
+			validateIPPacket(t, p[src.ipLayerOffset:], pktType, totalLen, i, j)
+		})
+	})
+
+	t.Run("NextPayloadInPlace", func(t *testing.T) {
+		var p = make([]byte, DefaultSnapLen)
+		testCaptureMethods(t, func(t *testing.T, src *MockSource, i, j uint16) {
+
+			// Use NewPacket() method of source to instantiate a new reusable packet buffer
+			if cap(p) == 0 {
+				pkt := src.NewPacket()
+				p = pkt.Payload()
+			}
+
+			p, pktType, totalLen, err := src.NextPayload(p)
+			require.Nil(t, err)
+			validateIPPacket(t, p[src.ipLayerOffset:], pktType, totalLen, i, j)
+		})
+	})
+
+	t.Run("NextPayloadZeroCopy", func(t *testing.T) {
+		testCaptureMethods(t, func(t *testing.T, src *MockSource, i, j uint16) {
+			p, pktType, totalLen, err := src.NextPayloadZeroCopy()
+			require.Nil(t, err)
+			validateIPPacket(t, p[src.ipLayerOffset:], pktType, totalLen, i, j)
+		})
+	})
+
 	t.Run("NextIPPacket", func(t *testing.T) {
 		testCaptureMethods(t, func(t *testing.T, src *MockSource, i, j uint16) {
 			p, pktType, totalLen, err := src.NextIPPacket(nil)
@@ -172,6 +204,14 @@ func TestCaptureMethods(t *testing.T) {
 			}
 
 			p, pktType, totalLen, err := src.NextIPPacket(p)
+			require.Nil(t, err)
+			validateIPPacket(t, p, pktType, totalLen, i, j)
+		})
+	})
+
+	t.Run("NextIPPacketZeroCopy", func(t *testing.T) {
+		testCaptureMethods(t, func(t *testing.T, src *MockSource, i, j uint16) {
+			p, pktType, totalLen, err := src.NextIPPacketZeroCopy()
 			require.Nil(t, err)
 			validateIPPacket(t, p, pktType, totalLen, i, j)
 		})
@@ -293,6 +333,39 @@ func BenchmarkCaptureMethods(b *testing.B) {
 		}
 	})
 
+	b.Run("NextPayload", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			p, pktType, totalLen, _ := mockSrc.NextPayload(nil)
+			_ = p
+			_ = pktType
+			_ = totalLen
+		}
+	})
+
+	b.Run("NextPayloadInPlace", func(b *testing.B) {
+		pkt := mockSrc.NewPacket()
+		var p []byte = pkt.Payload()
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			p, pktType, totalLen, _ := mockSrc.NextPayload(p)
+			_ = p
+			_ = pktType
+			_ = totalLen
+		}
+	})
+
+	b.Run("NextPayloadZeroCopy", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			p, pktType, totalLen, _ := mockSrc.NextPayloadZeroCopy()
+			_ = p
+			_ = pktType
+			_ = totalLen
+		}
+	})
+
 	b.Run("NextIPPacket", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
@@ -310,6 +383,16 @@ func BenchmarkCaptureMethods(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			p, pktType, totalLen, _ := mockSrc.NextIPPacket(p)
+			_ = p
+			_ = pktType
+			_ = totalLen
+		}
+	})
+
+	b.Run("NextIPPacketZeroCopy", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			p, pktType, totalLen, _ := mockSrc.NextIPPacketZeroCopy()
 			_ = p
 			_ = pktType
 			_ = totalLen
