@@ -106,32 +106,39 @@ func (i IPLayer) String() (res string) {
 // Source denotes a generic packet capture source
 type Source interface {
 
-	// NewPacket creates an empty "buffer" package to be used as destination for the NextPacketInto()
-	// method. It ensures that a valid packet of appropriate structure / length is created
+	// NewPacket creates an empty "buffer" packet to be used as destination for the NextPacket() / NextPayload() /
+	// NextIPPacket() methods (the latter two by calling .Payload() / .IPLayer() on the created buffer). It ensures
+	// that a valid packet of appropriate structure / length is created
 	NewPacket() Packet
 
-	// NextPacket receives the next packet from the wire and returns it. The operation is blocking. In
+	// NextPacket receives the next packet from the source and returns it. The operation is blocking. In
 	// case a non-nil "buffer" Packet is provided it will be populated with the data (and returned). The
 	// buffer packet can be reused. Otherwise a new Packet is allocated.
 	NextPacket(pBuf Packet) (Packet, error)
 
-	// NextIPPacketFn executes the provided function on the next packet received on the wire and only
-	// return the ring buffer block to the kernel upon completion of the function. If possible, the
-	// operation should provide a zero-copy way of interaction with the payload / metadata.
-	NextPacketFn(func(payload []byte, totalLen uint32, pktType PacketType, ipLayerOffset byte) error) error
+	// NextPayload receives the raw payload of the next packet from the source and returns it. The operation is blocking.
+	// In case a non-nil "buffer" byte slice / payload is provided it will be populated with the data (and returned).
+	// The buffer can be reused. Otherwise a new byte slice / payload is allocated.
+	NextPayload(pBuf []byte) ([]byte, byte, uint32, error)
 
-	// NextIPPacket receives the next packet's IP layer from the wire and returns it. The operation is blocking.
-	// In case a non-nil "buffer" IPLayer is provided it will be populated with the data (and returned). The
-	// buffer packet can be reused. Otherwise a new IPLayer is allocated.
+	// NextIPPacket receives the IP layer of the next packet from the source and returns it. The operation is blocking.
+	// In case a non-nil "buffer" IPLayer is provided it will be populated with the data (and returned).
+	// The buffer can be reused. Otherwise a new IPLayer is allocated.
 	NextIPPacket(pBuf IPLayer) (IPLayer, PacketType, uint32, error)
 
-	// Stats returns (and clears) the packet counters of the underlying socket
+	// NextPacketFn executes the provided function on the next packet received on the source. If possible, the
+	// operation should provide a zero-copy way of interaction with the payload / metadata. All operations on the data
+	// must be completed prior to any subsequent call to any Next*() method.
+	NextPacketFn(func(payload []byte, totalLen uint32, pktType PacketType, ipLayerOffset byte) error) error
+
+	// Stats returns (and clears) the packet counters of the underlying source
 	Stats() (Stats, error)
 
 	// Link returns the underlying link
 	Link() *link.Link
 
-	// Unblock ensures that a potentially ongoing blocking PPOLL is released (returning an ErrCaptureUnblock)
+	// Unblock ensures that a potentially ongoing blocking poll operation is released (returning an ErrCaptureUnblock from
+	// any potentially ongoing call to Next*() that might currently be blocked)
 	Unblock() error
 
 	// Close stops / closes the capture source
@@ -139,6 +146,18 @@ type Source interface {
 
 	// Free releases any pending resources from the capture source (must be called after Close())
 	Free() error
+}
+
+// SourceZeroCopy denotes a generic packet capture source that supports zero-copy operations
+type SourceZeroCopy interface {
+
+	// NextPayloadZeroCopy receives the raw payload of the next packet from the source and returns it. The operation is blocking.
+	// The returned payload provides direct zero-copy access to the underlying data source (e.g. a ring buffer).
+	NextPayloadZeroCopy() ([]byte, error)
+
+	// NextIPPacketZeroCopy receives the IP layer of the next packet from the source and returns it. The operation is blocking.
+	// The returned IPLayer provides direct zero-copy access to the underlying data source (e.g. a ring buffer).
+	NextIPPacketZeroCopy() (IPLayer, PacketType, uint32, error)
 }
 
 // Packet denotes a packet retrieved via the AF_PACKET ring buffer,
