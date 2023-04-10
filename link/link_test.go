@@ -246,7 +246,7 @@ func TestNew(t *testing.T) {
 	}{
 		{
 			name: "Test New Fail Interface not found",
-			args: args{ifName: "eth2"},
+			args: args{ifName: "ethDoesNotReallyExist"},
 			mockFn: func(ifName string) (Type, error) {
 				return -1, fs.ErrNotExist
 			},
@@ -255,7 +255,7 @@ func TestNew(t *testing.T) {
 		},
 		{
 			name: "Test New Fail Interface not up",
-			args: args{ifName: "eth1"},
+			args: args{ifName: "ethDoesNotReallyExist"},
 			mockFn: func(ifName string) (Type, error) {
 				return TypeEthernet, nil
 			},
@@ -264,7 +264,7 @@ func TestNew(t *testing.T) {
 		},
 		{
 			name: "Test New Fail Invalid Link Type",
-			args: args{ifName: "eth0"},
+			args: args{ifName: "ethDoesNotReallyExist"},
 			mockFn: func(ifName string) (Type, error) {
 				return TypeInvalid, nil
 			},
