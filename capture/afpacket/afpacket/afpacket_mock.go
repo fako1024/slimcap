@@ -63,7 +63,7 @@ func NewMockSource(iface string, options ...Option) (*MockSource, error) {
 
 	src := &Source{
 		snapLen:       DefaultSnapLen,
-		ipLayerOffset: link.Type(link.TypeEthernet).IpHeaderOffset(),
+		ipLayerOffset: link.TypeEthernet.IpHeaderOffset(),
 		link: &link.Link{
 			Type: link.TypeEthernet,
 			Interface: &net.Interface{
@@ -91,6 +91,12 @@ func NewMockSource(iface string, options ...Option) (*MockSource, error) {
 	}, nil
 }
 
+// CanAddPackets returns if any more packets can be added to the mock source (allowing to
+// non-blockingly assert if the buffer / channel is full or will be on the next operation)
+func (m *MockSource) CanAddPackets() bool {
+	return len(m.mockPackets) < cap(m.mockPackets)
+}
+
 // Pipe continuously pipes packets from the provided source through this one
 func (m *MockSource) Pipe(src capture.Source) chan error {
 	errChan := make(chan error)
@@ -116,6 +122,40 @@ func (m *MockSource) Pipe(src capture.Source) chan error {
 func (m *MockSource) Run() chan error {
 	errChan := make(chan error)
 	go m.run(errChan)
+
+	return errChan
+}
+
+// RunNoDrain acts as a high-throughput mode to allow continuous reading the same data currently in the
+// mock buffer without consuming it and with minimal overhead from handling the mock socket / semaphore
+// It is intended to be used in benchmarks using the mock source to minimize measurement noise from the
+// mock implementation itself
+func (m *MockSource) RunNoDrain() chan error {
+	errChan := make(chan error)
+	go func(errs chan error) {
+
+		// Populate a slice with all packets from the channel for repeated consumption
+		packets := make([]capture.Packet, 0, len(m.mockPackets))
+		for i := 0; i < len(m.mockPackets); i++ {
+			packets = append(packets, <-m.mockPackets)
+		}
+
+		// Queue / trigger a single event equivalent to receiving a new block via the PPOLL syscall and
+		// instruct the mock socket to not release the semaphore. That way data can be consumed immediately
+		// at all times
+		m.mockFd.SetNoRelease(true)
+		if err := event.ToMockHandler(m.eventHandler).SignalAvailableData(); err != nil {
+			errs <- err
+			return
+		}
+
+		// Continuously mark all blocks as available to the user at the given interval
+		for {
+			for i := 0; i < len(packets); i++ {
+				m.mockFd.Put(packets[i])
+			}
+		}
+	}(errChan)
 
 	return errChan
 }
