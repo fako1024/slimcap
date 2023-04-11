@@ -161,6 +161,34 @@ func TestCaptureMethods(t *testing.T) {
 		})
 	})
 
+	t.Run("NextPayload", func(t *testing.T) {
+		testCaptureMethods(t, func(t *testing.T, src *Source) {
+			p, pktType, totalLen, err := src.NextPayload(nil)
+			require.Nil(t, err)
+			require.NotNil(t, p)
+			require.Equal(t, capture.PacketUnknown, pktType)
+			require.NotZero(t, totalLen)
+		})
+	})
+
+	t.Run("NextPayloadInPlace", func(t *testing.T) {
+		var p capture.IPLayer
+		testCaptureMethods(t, func(t *testing.T, src *Source) {
+
+			// Use NewPacket() method of source to instantiate a new reusable packet buffer
+			if cap(p) == 0 {
+				pkt := src.NewPacket()
+				p = pkt.Payload()
+			}
+
+			_, pktType, totalLen, err := src.NextPayload(p)
+			require.Nil(t, err)
+			require.NotNil(t, p)
+			require.Equal(t, capture.PacketUnknown, pktType)
+			require.NotZero(t, totalLen)
+		})
+	})
+
 	t.Run("NextIPPacket", func(t *testing.T) {
 		testCaptureMethods(t, func(t *testing.T, src *Source) {
 			p, pktType, totalLen, err := src.NextIPPacket(nil)

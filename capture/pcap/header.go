@@ -5,11 +5,11 @@ import (
 )
 
 const (
-	HeaderSize       = 24 // HeaderSize: Overall in-memory size of the main pcap file header
-	PacketHeaderSize = 16 // PacketHeaderSize: I-memory size of the packet specific header
+	HeaderSize       = 24 // HeaderSize : Overall in-memory size of the main pcap file header
+	PacketHeaderSize = 16 // PacketHeaderSize : I-memory size of the packet specific header
 
-	MagicNativeEndianess  = uint32(0xa1b2c3d4)
-	MagicSwappedEndianess = uint32(0xd4c3b2a1)
+	MagicNativeEndianess  = uint32(0xa1b2c3d4) // MagicNativeEndianess : endianess of local system
+	MagicSwappedEndianess = uint32(0xd4c3b2a1) // MagicSwappedEndianess : endianess of non-local / swapped system
 )
 
 // Header denotes the main pcap file header:
@@ -24,6 +24,7 @@ type Header struct {
 	Network      uint32
 }
 
+// SwapEndianess switches / swaps the endianess of the header
 func (h Header) SwapEndianess() Header {
 	return Header{
 		MagicNumber:  bits.ReverseBytes32(h.MagicNumber),
@@ -45,6 +46,7 @@ type PacketHeader struct {
 	OriginalLen int32
 }
 
+// SwapEndianess switches / swaps the endianess of the packet specific header
 func (h PacketHeader) SwapEndianess() PacketHeader {
 	return PacketHeader{
 		TSSec:       int32(bits.ReverseBytes32(uint32(h.TSSec))),

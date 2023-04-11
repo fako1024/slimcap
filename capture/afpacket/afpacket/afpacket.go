@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	DefaultSnapLen = (1 << 16) // 64 kiB
+	DefaultSnapLen = (1 << 16) // DefaultSnapLen : 64 kiB
 )
 
 // Source denotes a plain AF_PACKET capture source
@@ -42,7 +42,7 @@ func NewSource(iface string, options ...Option) (*Source, error) {
 	}
 	link, err := link.New(iface)
 	if err != nil {
-		return nil, fmt.Errorf("failed to set up link on %s: %s", iface, err)
+		return nil, fmt.Errorf("failed to set up link on %s: %w", iface, err)
 	}
 
 	return NewSourceFromLink(link, options...)
@@ -98,16 +98,17 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 	return src, nil
 }
 
-// NewPacket creates an empty "buffer" package to be used as destination for the NextPacketInto()
-// method. It ensures that a valid packet of appropriate structure / length is created
+// NewPacket creates an empty "buffer" packet to be used as destination for the NextPacket() / NextPayload() /
+// NextIPPacket() methods (the latter two by calling .Payload() / .IPLayer() on the created buffer). It ensures
+// that a valid packet of appropriate structure / length is created
 func (s *Source) NewPacket() capture.Packet {
 	p := make(capture.Packet, s.snapLen+capture.PacketHdrOffset)
 	return p
 }
 
-// NextPacket receives the next packet from the wire and returns it. The operation is blocking. In
+// NextPacket receives the next packet from the source and returns it. The operation is blocking. In
 // case a non-nil "buffer" Packet is provided it will be populated with the data (and returned). The
-// buffer packet can be reused. Otherwise a new Packet of the Source-specific type is allocated.
+// buffer packet can be reused. Otherwise a new Packet is allocated.
 func (s *Source) NextPacket(pBuf capture.Packet) (capture.Packet, error) {
 
 	n, err := s.nextPacketInto(s.buf)
@@ -127,9 +128,63 @@ func (s *Source) NextPacket(pBuf capture.Packet) (capture.Packet, error) {
 	return pBuf, nil
 }
 
-// NextIPPacketFn executes the provided function on the next packet received on the wire and only
-// return the ring buffer block to the kernel upon completion of the function. If possible, the
-// operation should provide a zero-copy way of interaction with the payload / metadata.
+// NextPayload receives the raw payload of the next packet from the source and returns it. The operation is blocking.
+// In case a non-nil "buffer" byte slice / payload is provided it will be populated with the data (and returned).
+// The buffer can be reused. Otherwise a new byte slice / payload is allocated.
+func (s *Source) NextPayload(pBuf []byte) ([]byte, byte, uint32, error) {
+
+	// If a buffer was provided, store the payload directly in it
+	if pBuf != nil {
+
+		// Set the correct length of the buffer and populate it
+		pBuf = pBuf[:cap(pBuf)]
+		n, pktType, totalLen, err := s.nextPayloadInto(pBuf)
+		if err != nil {
+			return nil, capture.PacketUnknown, 0, err
+		}
+
+		return pBuf[:n], pktType, totalLen, nil
+	}
+
+	// If no buffer was provided, return a copy of the packet
+	n, pktType, totalLen, err := s.nextPayloadInto(s.buf)
+	if err != nil {
+		return nil, capture.PacketUnknown, 0, err
+	}
+
+	return copyIPLayer(s.buf[:n]), pktType, totalLen, nil
+}
+
+// NextIPPacket receives the IP layer of the next packet from the source and returns it. The operation is blocking.
+// In case a non-nil "buffer" IPLayer is provided it will be populated with the data (and returned).
+// The buffer can be reused. Otherwise a new IPLayer is allocated.
+func (s *Source) NextIPPacket(pBuf capture.IPLayer) (capture.IPLayer, capture.PacketType, uint32, error) {
+
+	// If a buffer was provided, store the IP layer directly in it
+	if pBuf != nil {
+
+		// Set the correct length of the buffer and populate it
+		pBuf = pBuf[:cap(pBuf)]
+		n, pktType, totalLen, err := s.nextPayloadInto(pBuf)
+		if err != nil {
+			return nil, capture.PacketUnknown, 0, err
+		}
+
+		return pBuf[s.ipLayerOffset:n], pktType, totalLen, nil
+	}
+
+	// If no buffer was provided, return a copy of the packet
+	n, pktType, totalLen, err := s.nextPayloadInto(s.buf)
+	if err != nil {
+		return nil, capture.PacketUnknown, 0, err
+	}
+
+	return copyIPLayer(s.buf[s.ipLayerOffset:n]), pktType, totalLen, nil
+}
+
+// NextPacketFn executes the provided function on the next packet received on the source. If possible, the
+// operation should provide a zero-copy way of interaction with the payload / metadata. All operations on the data
+// must be completed prior to any subsequent call to any Next*() method.
 func (s *Source) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType capture.PacketType, ipLayerOffset byte) error) error {
 
 	if s.eventHandler.Fd == 0 {
@@ -151,7 +206,7 @@ retry:
 		if errno == unix.EINTR {
 			goto retry
 		}
-		return fmt.Errorf("error polling for next packet: %d", errno)
+		return fmt.Errorf("error polling for next packet: %w", errno)
 	}
 
 	// Receive a packet from the wire (According to PPOLL there should be at least one)
@@ -166,32 +221,10 @@ retry:
 		return err
 	}
 
-	return fn(s.buf[:n], uint32(totalLen), pktType, s.ipLayerOffset) // TODO: How do we get the total packet size from a plain socket?
+	return fn(s.buf[:n], uint32(totalLen), pktType, s.ipLayerOffset)
 }
 
-// NextIPPacket receives the next packet's IP layer from the wire and returns it. The operation is blocking.
-// In case a non-nil "buffer" IPLayer is provided it will be populated with the data (and returned). The
-// buffer packet can be reused. Otherwise a new IPLayer is allocated.
-func (s *Source) NextIPPacket(pBuf capture.IPLayer) (capture.IPLayer, capture.PacketType, uint32, error) {
-
-	n, pktType, totalLen, err := s.nextIPLayerInto(s.buf)
-	if err != nil {
-		return nil, capture.PacketUnknown, 0, err
-	}
-
-	// If no buffer was provided, return a copy of the packet
-	if pBuf == nil {
-		return copyIPLayer(s.buf[s.ipLayerOffset:n]), pktType, totalLen, nil
-	}
-
-	// Set the correct length of the buffer and populate it
-	pBuf = pBuf[:cap(pBuf)]
-	copy(pBuf, s.buf[s.ipLayerOffset:n])
-
-	return pBuf, pktType, totalLen, nil
-}
-
-// Stats returns (and clears) the packet counters of the underlying socket
+// Stats returns (and clears) the packet counters of the underlying source
 func (s *Source) Stats() (capture.Stats, error) {
 	s.Lock()
 	defer s.Unlock()
@@ -206,7 +239,13 @@ func (s *Source) Stats() (capture.Stats, error) {
 	}, nil
 }
 
-// Unblock ensures that a potentially ongoing blocking PPOLL is released (returning an ErrCaptureUnblock)
+// Link returns the underlying link
+func (s *Source) Link() *link.Link {
+	return s.link
+}
+
+// Unblock ensures that a potentially ongoing blocking poll operation is released (returning an ErrCaptureUnblock from
+// any potentially ongoing call to Next*() that might currently be blocked)
 func (s *Source) Unblock() error {
 	if s == nil || s.eventHandler.Efd < 0 || s.eventHandler.Fd < 0 {
 		return errors.New("cannot call Unblock() on nil / closed capture source")
@@ -248,11 +287,6 @@ func (s *Source) Free() error {
 	return nil
 }
 
-// Link returns the underlying link
-func (s *Source) Link() *link.Link {
-	return s.link
-}
-
 func (s *Source) nextPacketInto(data capture.Packet) (int, error) {
 
 	if s.eventHandler.Fd == 0 {
@@ -274,7 +308,7 @@ retry:
 		if errno == unix.EINTR {
 			goto retry
 		}
-		return -1, fmt.Errorf("error polling for next packet: %d", errno)
+		return -1, fmt.Errorf("error polling for next packet: %w", errno)
 	}
 
 	// Receive a packet from the wire (According to PPOLL there should be at least one)
@@ -290,13 +324,13 @@ retry:
 		return -1, fmt.Errorf("failed to determine packet length: %w", err)
 	}
 
-	data[1] = byte(s.ipLayerOffset)
+	data[1] = s.ipLayerOffset
 	*(*uint32)(unsafe.Pointer(&data[2])) = uint32(totalLen)
 
 	return n, nil
 }
 
-func (s *Source) nextIPLayerInto(data capture.IPLayer) (int, capture.PacketType, uint32, error) {
+func (s *Source) nextPayloadInto(data capture.IPLayer) (int, capture.PacketType, uint32, error) {
 
 	if s.eventHandler.Fd == 0 {
 		return -1, capture.PacketUnknown, 0, errors.New("cannot nextPacketInto() on closed capture source")
@@ -317,7 +351,7 @@ retry:
 		if errno == unix.EINTR {
 			goto retry
 		}
-		return -1, capture.PacketUnknown, 0, fmt.Errorf("error polling for next packet: %d", errno)
+		return -1, capture.PacketUnknown, 0, fmt.Errorf("error polling for next packet: %w", errno)
 	}
 
 	// Receive a packet from the wire (According to PPOLL there should be at least one)

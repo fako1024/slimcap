@@ -71,6 +71,30 @@ func TestCaptureMethods(t *testing.T) {
 		})
 	})
 
+	t.Run("NextPayload", func(t *testing.T) {
+		testCaptureMethods(t, func(t *testing.T, src *MockSource, i, j uint16) {
+			p, pktType, totalLen, err := src.NextPayload(nil)
+			require.Nil(t, err)
+			validateIPPacket(t, p[src.ipLayerOffset:], pktType, totalLen, i, j)
+		})
+	})
+
+	t.Run("NextPayloadInPlace", func(t *testing.T) {
+		var p []byte
+		testCaptureMethods(t, func(t *testing.T, src *MockSource, i, j uint16) {
+
+			// Use NewPacket() method of source to instantiate a new reusable packet buffer
+			if cap(p) == 0 {
+				pkt := src.NewPacket()
+				p = pkt.Payload()
+			}
+
+			p, pktType, totalLen, err := src.NextPayload(p)
+			require.Nil(t, err)
+			validateIPPacket(t, p[src.ipLayerOffset:], pktType, totalLen, i, j)
+		})
+	})
+
 	t.Run("NextIPPacket", func(t *testing.T) {
 		testCaptureMethods(t, func(t *testing.T, src *MockSource, i, j uint16) {
 			p, pktType, totalLen, err := src.NextIPPacket(nil)
@@ -185,12 +209,11 @@ func BenchmarkCaptureMethods(b *testing.B) {
 		Promiscuous(false),
 	)
 	require.Nil(b, err)
-	mockSrc.Run()
-	go func() {
-		for {
-			mockSrc.AddPacket(testPacket)
-		}
-	}()
+
+	for mockSrc.CanAddPackets() {
+		mockSrc.AddPacket(testPacket)
+	}
+	mockSrc.RunNoDrain()
 
 	b.Run("NextPacket", func(b *testing.B) {
 		b.ReportAllocs()
