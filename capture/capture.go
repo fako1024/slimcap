@@ -158,6 +158,9 @@ type SourceZeroCopy interface {
 	// NextIPPacketZeroCopy receives the IP layer of the next packet from the source and returns it. The operation is blocking.
 	// The returned IPLayer provides direct zero-copy access to the underlying data source (e.g. a ring buffer).
 	NextIPPacketZeroCopy() (IPLayer, PacketType, uint32, error)
+	
+	// Wrap generic Source
+	Source
 }
 
 // Packet denotes a packet retrieved via the AF_PACKET ring buffer,
