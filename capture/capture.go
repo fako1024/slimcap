@@ -153,7 +153,7 @@ type SourceZeroCopy interface {
 
 	// NextPayloadZeroCopy receives the raw payload of the next packet from the source and returns it. The operation is blocking.
 	// The returned payload provides direct zero-copy access to the underlying data source (e.g. a ring buffer).
-	NextPayloadZeroCopy() ([]byte, error)
+	NextPayloadZeroCopy() ([]byte, PacketType, uint32, error)
 
 	// NextIPPacketZeroCopy receives the IP layer of the next packet from the source and returns it. The operation is blocking.
 	// The returned IPLayer provides direct zero-copy access to the underlying data source (e.g. a ring buffer).
