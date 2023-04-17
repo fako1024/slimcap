@@ -43,7 +43,7 @@ func (p *Handler) Poll(events int16) (bool, unix.Errno) {
 	// MockHandler logic: Poll, then release the semaphore, indicating data has
 	// been consumed
 	hasEvent, errno := poll(pollEvents)
-	if !hasEvent {
+	if !hasEvent && errno == 0 {
 		if errno := p.mockFd.ReleaseSemaphore(); errno != 0 {
 			return false, errno
 		}
