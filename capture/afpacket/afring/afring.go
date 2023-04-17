@@ -427,14 +427,10 @@ func (s *Source) handleEvent() error {
 	// Set the bypass marker to allow for re-entry in nextPacket() where we left off if
 	// required (e.g. on ErrCaptureUnblock)
 	s.unblocked = true
-	switch efdData {
-	case event.SignalUnblock:
-		return capture.ErrCaptureUnblock
-	case event.SignalStop:
+	if efdData[7] > 0 {
 		return capture.ErrCaptureStopped
-	default:
-		return fmt.Errorf("unknown event during poll for next packet: %v", efdData)
 	}
+	return capture.ErrCaptureUnblock
 }
 
 func setupRingBuffer(sd socket.FileDescriptor, tPacketReq tPacketRequest) ([]byte, event.EvtFileDescriptor, error) {
