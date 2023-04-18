@@ -34,7 +34,6 @@ func TestSemaphoreMock(t *testing.T) {
 		}
 
 		errChan <- errors.New("should not reach here")
-		return
 	}(errChan)
 
 	for i := 0; i < 5; i++ {
@@ -42,6 +41,29 @@ func TestSemaphoreMock(t *testing.T) {
 		require.Nil(t, ToMockHandler(handler).SignalAvailableData())
 	}
 
-	handler.Efd.Signal(EvtData(SignalUnblock))
+	require.Nil(t, handler.Efd.Signal(SignalUnblock))
 	require.Nil(t, <-errChan)
+}
+
+func TestMultiEvents(t *testing.T) {
+	handler, err := New()
+	require.Nil(t, err)
+
+	for i := 0; i < 300; i++ {
+		require.Nil(t, handler.Signal(SignalUnblock))
+	}
+	require.Nil(t, handler.Signal(SignalStop))
+	evtData, err := handler.ReadEvent()
+	require.Nil(t, err)
+	require.Equal(t, EvtData{44, 1, 0, 0, 0, 0, 0, 1}, evtData)
+
+	require.Nil(t, handler.Signal(SignalUnblock))
+	evtData, err = handler.ReadEvent()
+	require.Nil(t, err)
+	require.Equal(t, EvtData{1, 0, 0, 0, 0, 0, 0, 0}, evtData)
+
+	require.Nil(t, handler.Signal(SignalStop))
+	evtData, err = handler.ReadEvent()
+	require.Nil(t, err)
+	require.Equal(t, EvtData{0, 0, 0, 0, 0, 0, 0, 1}, evtData)
 }

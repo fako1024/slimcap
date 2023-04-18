@@ -15,10 +15,10 @@ type EvtData [8]byte
 var (
 
 	// SignalUnblock ends any ongoing PPOLL syscall  (similar to a timeout)
-	SignalUnblock = EvtData{2, 0, 0, 0, 0, 0, 0, 0}
+	SignalUnblock = EvtData{1, 0, 0, 0, 0, 0, 0, 0}
 
 	// SignalStop causes the capture to stop
-	SignalStop = EvtData{4, 0, 0, 0, 0, 0, 0, 0}
+	SignalStop = EvtData{0, 0, 0, 0, 0, 0, 0, 1}
 )
 
 // New instantiates a new non-blocking event file descriptor

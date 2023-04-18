@@ -30,7 +30,7 @@ func NewMockHandler() (*Handler, *socket.MockFileDescriptor, error) {
 	// functionality on top of it
 	return &Handler{
 		Efd: efd,
-		Fd:  socket.FileDescriptor(fd.FileDescriptor),
+		Fd:  fd.FileDescriptor,
 
 		mockFd: &fd,
 	}, &fd, nil

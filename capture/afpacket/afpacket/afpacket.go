@@ -389,16 +389,10 @@ func (s *Source) handleEvent() error {
 		return fmt.Errorf("error reading event: %w", err)
 	}
 
-	// Set the bypass marker to allow for re-entry in nextPacket() where we left off if
-	// required (e.g. on ErrCaptureUnblock)
-	switch efdData {
-	case event.SignalUnblock:
-		return capture.ErrCaptureUnblock
-	case event.SignalStop:
+	if efdData[7] > 0 {
 		return capture.ErrCaptureStopped
-	default:
-		return fmt.Errorf("unknown event during poll for next packet: %v", efdData)
 	}
+	return capture.ErrCaptureUnblock
 }
 
 // Unfortunately there is no ancillary information about the raw / original total size

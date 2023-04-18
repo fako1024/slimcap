@@ -7,6 +7,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const nPollEvents = 2
+
 // Handler wraps a socket file descriptor and an event file descriptor in a single
 // instance. In addition, a (unexported) mock file descriptor allows for mocking
 // the entire handler without having to manipulate / distinguish from the caller side
@@ -43,7 +45,7 @@ func (p *Handler) Poll(events int16) (bool, unix.Errno) {
 	// MockHandler logic: Poll, then release the semaphore, indicating data has
 	// been consumed
 	hasEvent, errno := poll(pollEvents)
-	if !hasEvent {
+	if !hasEvent && errno == 0 {
 		if errno := p.mockFd.ReleaseSemaphore(); errno != 0 {
 			return false, errno
 		}
@@ -67,6 +69,7 @@ func (p *Handler) Recvfrom(buf []byte, flags int) (int, uint8, error) {
 	return pkt.Len(), pkt.Type(), nil
 }
 
+// GetSocketStats returns (and resets) socket / traffic statistics
 func (p *Handler) GetSocketStats() (socket.TPacketStats, error) {
 
 	// Fast path: If this is not a MockHandler, simply return a call to GetSocketStats()
@@ -97,8 +100,8 @@ func (p *Handler) recvfrom(buf []byte, flags int) (int, uint8, error) {
 	return n, pktType, nil
 }
 
-func poll(pollEvents [2]unix.PollFd) (bool, unix.Errno) {
-	errno := pollBlock(&pollEvents[0], len(pollEvents))
+func poll(pollEvents [nPollEvents]unix.PollFd) (bool, unix.Errno) {
+	errno := pollBlock(&pollEvents[0], nPollEvents)
 	if errno != 0 {
 		return pollEvents[0].Revents&unix.POLLIN != 0, errno
 	}

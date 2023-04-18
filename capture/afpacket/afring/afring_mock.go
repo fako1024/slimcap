@@ -32,7 +32,8 @@ type MockSource struct {
 	mockBlocks     chan int
 	mockBlockCount int
 
-	mockFd *socket.MockFileDescriptor
+	mockFd   *socket.MockFileDescriptor
+	isClosed bool
 }
 
 // NewMockSource instantiates a new mock ring buffer source, wrapping a regular Source
@@ -213,6 +214,8 @@ func (m *MockSource) RunNoDrain(releaseInterval time.Duration) chan error {
 	errChan := make(chan error)
 	go func(errs chan error) {
 
+		defer close(errs)
+
 		// Queue / trigger a single event equivalent to receiving a new block via the PPOLL syscall and
 		// instruct the mock socket to not release the semaphore. That way data can be consumed immediately
 		// at all times
@@ -225,6 +228,13 @@ func (m *MockSource) RunNoDrain(releaseInterval time.Duration) chan error {
 		// Continuously mark all blocks as available to the user at the given interval
 		for {
 			for i := 0; i < m.nBlocks; i++ {
+
+				// If the ring buffer is empty it was apparently closed / free'd
+				if m.isClosed || len(m.ringBuffer.ring) == 0 {
+					errs <- nil
+					return
+				}
+
 				m.markBlock(i, unix.TP_STATUS_USER)
 				time.Sleep(releaseInterval)
 			}
@@ -246,6 +256,11 @@ func (m *MockSource) run(errChan chan error) {
 	defer close(errChan)
 
 	for block := range m.mockBlocks {
+
+		// If the ring buffer is empty it was apparently closed / free'd
+		if m.isClosed || len(m.ringBuffer.ring) == 0 {
+			break
+		}
 
 		thisBlock := block % m.nBlocks
 
@@ -275,4 +290,14 @@ func (m *MockSource) getBlockStatus(n int) (status uint32) {
 
 func (m *MockSource) markBlock(n int, status uint32) {
 	*(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[n*m.blockSize+8])) = status
+}
+
+func (m *MockSource) Close() error {
+	m.isClosed = true
+	return m.Source.Close()
+}
+
+func (m *MockSource) Free() error {
+	m.ringBuffer.ring = nil
+	return nil
 }
