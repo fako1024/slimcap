@@ -18,10 +18,10 @@ var (
 	PacketHdrOffset = 6
 
 	// ErrCaptureStopped denotes that the capture was stopped
-	ErrCaptureStopped error = errors.New("capture was stopped")
+	ErrCaptureStopped = errors.New("capture was stopped")
 
 	// ErrCaptureUnblock denotes that the capture received am unblocking signal
-	ErrCaptureUnblock error = errors.New("capture was released / unblocked")
+	ErrCaptureUnblock = errors.New("capture was released / unblocked")
 )
 
 // Stats denotes a packet capture stats structure providing basic counters
@@ -36,13 +36,13 @@ type Stats struct {
 type PacketType = byte
 
 const (
-	PacketThisHost  PacketType = iota // PacketThisHost: To us (unicast)
-	PacketBroadcast                   // PacketBroadcast: To all
-	PacketMulticast                   // PacketMulticast: To group
-	PacketOtherHost                   // PacketOtherHost: To someone else
-	PacketOutgoing                    // PacketOutgoing: Outgoing of any type
+	PacketThisHost  PacketType = iota // PacketThisHost : To us (unicast)
+	PacketBroadcast                   // PacketBroadcast : To all
+	PacketMulticast                   // PacketMulticast : To group
+	PacketOtherHost                   // PacketOtherHost : To someone else
+	PacketOutgoing                    // PacketOutgoing : Outgoing of any type
 
-	PacketUnknown PacketType = 255 // PacketUnknown: Unknown packet type / direction
+	PacketUnknown PacketType = 255 // PacketUnknown : Unknown packet type / direction
 )
 
 // IPLayer denotes the subset of bytes representing an IP layer
@@ -158,7 +158,7 @@ type SourceZeroCopy interface {
 	// NextIPPacketZeroCopy receives the IP layer of the next packet from the source and returns it. The operation is blocking.
 	// The returned IPLayer provides direct zero-copy access to the underlying data source (e.g. a ring buffer).
 	NextIPPacketZeroCopy() (IPLayer, PacketType, uint32, error)
-	
+
 	// Wrap generic Source
 	Source
 }
@@ -202,9 +202,14 @@ func (p *Packet) Payload() []byte {
 	return (*p)[PacketHdrOffset:]
 }
 
-// IIPLayer returns the IP layer of the packet (up to snaplen, if set)
+// IPLayer returns the IP layer of the packet (up to snaplen, if set)
 func (p *Packet) IPLayer() IPLayer {
 	return IPLayer((*p)[int((*p)[1])+PacketHdrOffset:])
+}
+
+// IPLayerOffset returns the offset of the IP layer of the packet (w.r.t. its beginning)
+func (p *Packet) IPLayerOffset() byte {
+	return (*p)[1]
 }
 
 // Type denotes the packet type (i.e. the packet direction w.r.t. the interface)
