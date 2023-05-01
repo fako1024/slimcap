@@ -25,7 +25,7 @@ func TestBlockSizeAlignment(t *testing.T) {
 		require.Nil(t, err)
 		require.Equal(t, uint32(1<<i), req.blockSize)
 		require.Equal(t, uint32(blockNr), req.blockNr)
-		require.Equal(t, int(blockNr*(1<<i)), req.blockSizeNr())
+		require.Equal(t, blockNr*(1<<i), req.blockSizeNr())
 	}
 	for i := 0; i < 32; i++ {
 		_, err := newTPacketRequestForBuffer((1<<i)+1, blockNr, snapLen)
@@ -121,7 +121,7 @@ func TestFillRingBuffer(t *testing.T) {
 			6, []byte{byte(i), byte(j)}, byte(i+j)%5, int(i+j))
 		require.Nil(t, err)
 
-		mockSrc.AddPacket(p)
+		require.Nil(t, mockSrc.AddPacket(p))
 		i++
 		j++
 	}
@@ -221,7 +221,7 @@ func TestCaptureMethods(t *testing.T) {
 		testCaptureMethods(t, func(t *testing.T, src *MockSource, i, j uint16) {
 			err := src.NextPacketFn(func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte) error {
 				require.Equal(t, src.link.Type.IpHeaderOffset(), ipLayerOffset)
-				require.Equal(t, uint32(i+j), totalLen)
+				require.Equal(t, int(i*1000+j), int(totalLen))
 				require.Equal(t, byte(i+j)%5, pktType)
 				require.Equal(t, fmt.Sprintf("1.2.3.%d:%d => 4.5.6.%d:%d (proto: %d)", i%254+1, i, j%254+1, j, 6), capture.IPLayer(payload[ipLayerOffset:]).String())
 				return nil
@@ -237,7 +237,7 @@ func TestPipe(t *testing.T) {
 	mockSrc, err := NewMockSource("mock",
 		CaptureLength(link.CaptureLengthMinimalIPv4Transport),
 		Promiscuous(false),
-		BufferSize(1024*1024, 5),
+		BufferSize(1024*16, 8),
 	)
 	require.Nil(t, err)
 
@@ -253,10 +253,10 @@ func TestPipe(t *testing.T) {
 					net.ParseIP(fmt.Sprintf("4.5.6.%d", j%254+1)),
 					i,
 					j,
-					6, []byte{byte(i), byte(j)}, byte(i+j)%5, int(i+j))
+					6, []byte{byte(i), byte(j)}, byte(i+j)%5, int(i*1000+j))
 				require.Nil(t, err)
 
-				mockSrc.AddPacket(p)
+				require.Nil(t, mockSrc.AddPacket(p))
 			}
 		}
 		mockSrc.FinalizeBlock(false)
@@ -311,7 +311,7 @@ func BenchmarkCaptureMethods(b *testing.B) {
 	require.Nil(b, err)
 
 	for mockSrc.CanAddPackets() {
-		mockSrc.AddPacket(testPacket)
+		require.Nil(b, mockSrc.AddPacket(testPacket))
 	}
 	mockSrc.RunNoDrain(time.Microsecond)
 
@@ -412,13 +412,13 @@ func BenchmarkCaptureMethods(b *testing.B) {
 	})
 }
 
-func testCaptureMethods(t *testing.T, fn func(t *testing.T, src *MockSource, i, j uint16)) {
+func testCaptureMethods(t *testing.T, fn func(t *testing.T, _ *MockSource, _, _ uint16)) {
 
 	// Setup a mock source
 	mockSrc, err := NewMockSource("mock",
 		CaptureLength(link.CaptureLengthMinimalIPv4Transport),
 		Promiscuous(false),
-		BufferSize(1024*1024, 5),
+		BufferSize(1024*16, 8),
 	)
 	require.Nil(t, err)
 
@@ -434,15 +434,14 @@ func testCaptureMethods(t *testing.T, fn func(t *testing.T, src *MockSource, i, 
 					net.ParseIP(fmt.Sprintf("4.5.6.%d", j%254+1)),
 					i,
 					j,
-					6, []byte{byte(i), byte(j)}, byte(i+j)%5, int(i+j))
+					6, []byte{byte(i), byte(j)}, byte(i+j)%5, int(i*1000+j))
 				require.Nil(t, err)
 
-				mockSrc.AddPacket(p)
+				require.Nil(t, mockSrc.AddPacket(p))
 			}
 		}
 		mockSrc.FinalizeBlock(false)
 		mockSrc.Done()
-
 	}()
 
 	// Consume data from the source via the respective method
@@ -469,15 +468,15 @@ func validatePacket(t *testing.T, p capture.Packet, i, j uint16) {
 }
 
 func validateIPPacket(t *testing.T, p capture.IPLayer, pktType capture.PacketType, totalLen uint32, i, j uint16) {
-	require.Equal(t, uint32(i+j), totalLen)
-	require.Equal(t, byte(i+j)%5, pktType)
-	require.Equal(t, fmt.Sprintf("1.2.3.%d:%d => 4.5.6.%d:%d (proto: %d)", i%254+1, i, j%254+1, j, 6), p.String())
+	require.Equalf(t, int(i*1000+j), int(totalLen), "i=%d, j=%d", i, j)
+	require.Equalf(t, byte(i+j)%5, pktType, "i=%d, j=%d", i, j)
+	require.Equalf(t, fmt.Sprintf("1.2.3.%d:%d => 4.5.6.%d:%d (proto: %d)", i%254+1, i, j%254+1, j, 6), p.String(), "i=%d, j=%d", i, j)
 	c, err := capture.BuildPacket(
 		net.ParseIP(fmt.Sprintf("1.2.3.%d", i%254+1)),
 		net.ParseIP(fmt.Sprintf("4.5.6.%d", j%254+1)),
 		i,
 		j,
-		6, []byte{byte(i), byte(j)}, byte(i+j)%5, int(i+j))
+		6, []byte{byte(i), byte(j)}, byte(i+j)%5, int(i*1000+j))
 	require.Nil(t, err)
-	require.Equalf(t, c.IPLayer(), p[:len(c.IPLayer())], "%v vs. %v", c.IPLayer(), p)
+	require.Equalf(t, c.IPLayer(), p[:len(c.IPLayer())], "%v vs. %v , i=%d, j=%d", c.IPLayer(), p, i, j)
 }
