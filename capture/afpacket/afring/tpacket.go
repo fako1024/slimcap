@@ -17,10 +17,6 @@ const (
 )
 
 const (
-	tPacketStatusKernel = 0
-	tPacketStatusUser   = (1 << 0)
-	tPacketStatusCopy   = (1 << 1)
-
 	tPacketDefaultBlockNr   = 4         // sizeof(tpacket3_hdr)
 	tPacketDefaultBlockSize = (1 << 20) // 1 MiB
 	tPacketDefaultBlockTOV  = 100       // ms

@@ -366,12 +366,12 @@ fetch:
 			}
 
 			// Handle rare cases of runaway packets
-			if s.curTPacketHeader.getStatus()&tPacketStatusCopy != 0 {
+			if s.curTPacketHeader.getStatus()&unix.TP_STATUS_COPY != 0 {
 				if s.curTPacketHeader.nPktsLeft != 0 {
 					fmt.Println(s.link.Name, "WUT (after runaway packet)?", s.curTPacketHeader.nPktsLeft)
 				}
-				s.curTPacketHeader.setStatus(tPacketStatusKernel)
-				s.offset = (s.offset + 1) % int(s.tpReq.frameNr)
+				s.curTPacketHeader.setStatus(unix.TP_STATUS_KERNEL)
+				s.offset = (s.offset + 1) % int(s.tpReq.blockNr)
 				s.curTPacketHeader = s.nextTPacketHeader()
 
 				continue
@@ -390,7 +390,7 @@ fetch:
 			if nextPos != 0 {
 				fmt.Println(s.link.Name, "WUT (after resetting)?", s.curTPacketHeader.nPktsLeft, nextPos)
 			}
-			s.curTPacketHeader.setStatus(tPacketStatusKernel)
+			s.curTPacketHeader.setStatus(unix.TP_STATUS_KERNEL)
 			s.offset = (s.offset + 1) % int(s.tpReq.blockNr)
 			s.curTPacketHeader = nil
 			goto fetch
