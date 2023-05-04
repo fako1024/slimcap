@@ -15,7 +15,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const mac = 82
+const (
+	mac                     = 82
+	blockStatusPollInterval = 10 * time.Millisecond
+)
 
 // MockSource denotes a fully mocked ring buffer source, behaving just like one
 // Since it wraps a regular Source, it can be used as a stand-in replacement without any further
@@ -51,7 +54,7 @@ func NewMockSource(iface string, options ...Option) (*MockSource, error) {
 		blockSize: tPacketDefaultBlockSize,
 		nBlocks:   tPacketDefaultBlockNr,
 
-		ipLayerOffset: link.Type(link.TypeEthernet).IpHeaderOffset(),
+		ipLayerOffset: link.TypeEthernet.IpHeaderOffset(),
 		link: &link.Link{
 			Type: link.TypeEthernet,
 			Interface: &net.Interface{
@@ -95,8 +98,8 @@ func (m *MockSource) PacketAddCallbackFn(fn func(payload []byte, totalLen uint32
 // This can happen prior to calling run or continuously while consuming data, mimicking the
 // function of an actual ring buffer. Consequently, if the ring buffer is full and elements not
 // yet consumed this function may block
-func (m *MockSource) AddPacket(pkt capture.Packet) {
-	m.addPacket(pkt.Payload(), pkt.TotalLen(), pkt.Type(), 0)
+func (m *MockSource) AddPacket(pkt capture.Packet) error {
+	return m.addPacket(pkt.Payload(), pkt.TotalLen(), pkt.Type(), 0)
 }
 
 // AddPacketFromSource consumes a single packet from the provided source and adds it to the source
@@ -116,12 +119,19 @@ func (m *MockSource) addPacket(payload []byte, totalLen uint32, pktType, ipLayer
 		if m.curBlockPos > 0 {
 			m.FinalizeBlock(false)
 		}
-		m.curBlockPos = tPacketHeaderLen
 		thisBlock = m.mockBlockCount % m.nBlocks
 
-		*(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[thisBlock*m.blockSize])) = 3                       // version
-		*(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[thisBlock*m.blockSize+8])) = unix.TP_STATUS_KERNEL // status
-		*(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[thisBlock*m.blockSize+16])) = tPacketHeaderLen     // offsetToFirstPkt
+		// Ensure that the packet has already been consumed to avoid race conditions (since there is no
+		// feedback from the receiver we can only poll until the packet status is not TP_STATUS_KERNEL)
+		for m.getBlockStatus(thisBlock) != unix.TP_STATUS_KERNEL {
+			time.Sleep(blockStatusPollInterval)
+		}
+
+		m.markBlock(thisBlock, unix.TP_STATUS_CSUMNOTREADY)
+		m.curBlockPos = tPacketHeaderLen
+		*(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[thisBlock*m.blockSize])) = 3                   // version
+		*(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[thisBlock*m.blockSize+12])) = 0                // nPkts
+		*(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[thisBlock*m.blockSize+16])) = tPacketHeaderLen // offsetToFirstPkt
 	}
 
 	block := m.ringBuffer.ring[thisBlock*m.blockSize : thisBlock*m.blockSize+m.blockSize]
@@ -136,7 +146,7 @@ func (m *MockSource) addPacket(payload []byte, totalLen uint32, pktType, ipLayer
 	if m.curBlockPos > tPacketHeaderLen {
 		*(*uint32)(unsafe.Pointer(&block[m.curBlockPos-mac-m.snapLen])) = uint32(mac + m.snapLen) // nextOffset
 	}
-	*(*uint32)(unsafe.Pointer(&block[12])) = *(*uint32)(unsafe.Pointer(&block[12])) + 1 // nPkts                                            // TPacket data
+	*(*uint32)(unsafe.Pointer(&block[12])) = *(*uint32)(unsafe.Pointer(&block[12])) + 1 // nPkts
 	m.curBlockPos += mac + m.snapLen
 
 	// Similar to the actual kernel ring buffer, we count packets as "seen" when they enter
@@ -277,17 +287,8 @@ func (m *MockSource) run(errChan chan error) {
 			break
 		}
 
-		thisBlock := block % m.nBlocks
-
-		// Ensure that the packet has already been consumed to avoid race conditions (since there is no
-		// feedback from the receiver we can only poll until the packet status is not TP_STATUS_USER)
-		for m.getBlockStatus(thisBlock) == unix.TP_STATUS_USER {
-			time.Sleep(100 * time.Millisecond)
-		}
-
-		// Store the next block in the ring buffer and mark it to be available to the reader
-		// copy(m.ringBuffer.ring[thisBlock*m.blockSize:thisBlock*m.blockSize+m.blockSize], block)
-		m.markBlock(thisBlock, unix.TP_STATUS_USER)
+		// Mark the next block in the ring buffer, making it available to the reader / userspace
+		m.markBlock(block%m.nBlocks, unix.TP_STATUS_USER)
 
 		// Queue / trigger an event equivalent to receiving a new block via the PPOLL syscall
 		if err := event.ToMockHandler(m.eventHandler).SignalAvailableData(); err != nil {
@@ -307,11 +308,13 @@ func (m *MockSource) markBlock(n int, status uint32) {
 	*(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[n*m.blockSize+8])) = status
 }
 
+// Close stops / closes the capture source
 func (m *MockSource) Close() error {
 	m.isClosed = true
 	return m.Source.Close()
 }
 
+// Free releases any pending resources from the capture source (must be called after Close())
 func (m *MockSource) Free() error {
 	m.ringBuffer.ring = nil
 	return nil
