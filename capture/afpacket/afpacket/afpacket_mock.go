@@ -26,14 +26,27 @@ const (
 type MockSource struct {
 	*Source
 
-	mockPackets chan capture.Packet
-	mockFd      *socket.MockFileDescriptor
+	mockPackets         chan capture.Packet
+	mockFd              *socket.MockFileDescriptor
+	packetAddCallbackFn func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte)
+}
+
+// PacketAddCallbackFn provides an optional callback function that is called when a packet is added
+// to the mock source (e.g. to build a reference for comparison)
+func (m *MockSource) PacketAddCallbackFn(fn func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte)) *MockSource {
+	m.packetAddCallbackFn = fn
+	return m
 }
 
 // AddPacket adds a new mock packet to the source
 // This can happen prior to calling run or continuously while consuming data
 func (m *MockSource) AddPacket(pkt capture.Packet) {
 	m.mockPackets <- pkt
+
+	// If a callback function was provided, execute it
+	if m.packetAddCallbackFn != nil {
+		m.packetAddCallbackFn(pkt.Payload(), pkt.TotalLen(), pkt.Type(), pkt.IPLayerOffset())
+	}
 
 	// We count packets as "seen" when they enter the pipeline, not when they are
 	// consumed from the buffer

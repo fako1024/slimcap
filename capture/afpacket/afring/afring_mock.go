@@ -34,6 +34,8 @@ type MockSource struct {
 
 	mockFd   *socket.MockFileDescriptor
 	isClosed bool
+
+	packetAddCallbackFn func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte)
 }
 
 // NewMockSource instantiates a new mock ring buffer source, wrapping a regular Source
@@ -80,6 +82,13 @@ func NewMockSource(iface string, options ...Option) (*MockSource, error) {
 		mockBlocks: make(chan int, src.nBlocks),
 		mockFd:     mockFd,
 	}, nil
+}
+
+// PacketAddCallbackFn provides an optional callback function that is called when a packet is added
+// to the mock source (e.g. to build a reference for comparison)
+func (m *MockSource) PacketAddCallbackFn(fn func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte)) *MockSource {
+	m.packetAddCallbackFn = fn
+	return m
 }
 
 // AddPacket adds a new mock packet to the source
@@ -133,6 +142,12 @@ func (m *MockSource) addPacket(payload []byte, totalLen uint32, pktType, ipLayer
 	// Similar to the actual kernel ring buffer, we count packets as "seen" when they enter
 	// the pipeline, not when they are consumed from the buffer
 	m.mockFd.IncrementPacketCount(1)
+
+	// If a callback function was provided, execute it
+	if m.packetAddCallbackFn != nil {
+		m.packetAddCallbackFn(payload, totalLen, pktType, ipLayerOffset)
+	}
+
 	return nil
 }
 

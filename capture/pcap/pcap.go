@@ -25,6 +25,8 @@ type Source struct {
 
 	nPackets      int
 	swapEndianess bool
+
+	packetAddCallbackFn func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte)
 }
 
 // NewSource instantiates a new pcap file capture source based on any io.Reader
@@ -173,6 +175,13 @@ func (s *Source) Free() error {
 	return nil
 }
 
+// PacketAddCallbackFn provides an optional callback function that is called when a packet is added
+// to the mock source (e.g. to build a reference for comparison)
+func (s *Source) PacketAddCallbackFn(fn func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte)) *Source {
+	s.packetAddCallbackFn = fn
+	return s
+}
+
 ////////////////////////////////////////////////////////////////////////
 
 func (s *Source) nextPacket() (pktHeader PacketHeader, err error) {
@@ -186,6 +195,11 @@ func (s *Source) nextPacket() (pktHeader PacketHeader, err error) {
 
 	if err = s.nextPacketData(int(pktHeader.CaptureLen)); err == nil {
 		s.nPackets++
+	}
+
+	// If a callback function was provided, execute it
+	if s.packetAddCallbackFn != nil {
+		s.packetAddCallbackFn(s.buf, uint32(pktHeader.OriginalLen), capture.PacketUnknown, s.ipLayerOffset)
 	}
 
 	return
