@@ -15,7 +15,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const mac = 82
+const (
+	mac                     = 82
+	blockStatusPollInterval = 10 * time.Millisecond
+)
 
 // MockSource denotes a fully mocked ring buffer source, behaving just like one
 // Since it wraps a regular Source, it can be used as a stand-in replacement without any further
@@ -112,7 +115,7 @@ func (m *MockSource) addPacket(payload []byte, totalLen uint32, pktType, ipLayer
 		// Ensure that the packet has already been consumed to avoid race conditions (since there is no
 		// feedback from the receiver we can only poll until the packet status is not TP_STATUS_KERNEL)
 		for m.getBlockStatus(thisBlock) != unix.TP_STATUS_KERNEL {
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(blockStatusPollInterval)
 		}
 
 		m.markBlock(thisBlock, unix.TP_STATUS_CSUMNOTREADY)
