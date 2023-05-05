@@ -99,7 +99,7 @@ func (m *MockSource) PacketAddCallbackFn(fn func(payload []byte, totalLen uint32
 // function of an actual ring buffer. Consequently, if the ring buffer is full and elements not
 // yet consumed this function may block
 func (m *MockSource) AddPacket(pkt capture.Packet) error {
-	return m.addPacket(pkt.Payload(), pkt.TotalLen(), pkt.Type(), 0)
+	return m.addPacket(pkt.Payload(), pkt.TotalLen(), pkt.Type(), pkt.IPLayerOffset())
 }
 
 // AddPacketFromSource consumes a single packet from the provided source and adds it to the source
@@ -142,10 +142,15 @@ func (m *MockSource) addPacket(payload []byte, totalLen uint32, pktType, ipLayer
 	block[m.curBlockPos+58] = pktType                                        // pktType
 	copy(block[m.curBlockPos+mac:m.curBlockPos+mac+m.snapLen], payload)      // payload
 
+	// Ensure that there is no "stray" nextOffset set from a previous perusal of this ring buffer block which
+	// might remain in case the block is finalized
+	*(*uint32)(unsafe.Pointer(&block[m.curBlockPos])) = 0
+
 	// If this is not the first package of the block, set the nextOffset of the previous packet
 	if m.curBlockPos > tPacketHeaderLen {
 		*(*uint32)(unsafe.Pointer(&block[m.curBlockPos-mac-m.snapLen])) = uint32(mac + m.snapLen) // nextOffset
 	}
+
 	*(*uint32)(unsafe.Pointer(&block[12])) = *(*uint32)(unsafe.Pointer(&block[12])) + 1 // nPkts
 	m.curBlockPos += mac + m.snapLen
 

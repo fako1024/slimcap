@@ -235,7 +235,7 @@ func TestPipe(t *testing.T) {
 
 	// Setup the original mock source
 	mockSrc, err := NewMockSource("mock",
-		CaptureLength(link.CaptureLengthMinimalIPv4Transport),
+		CaptureLength(link.CaptureLengthMinimalIPv6Transport),
 		Promiscuous(false),
 		BufferSize(1024*16, 8),
 	)
@@ -259,6 +259,7 @@ func TestPipe(t *testing.T) {
 				require.Nil(t, mockSrc.AddPacket(p))
 			}
 		}
+
 		mockSrc.FinalizeBlock(false)
 		mockSrc.Done()
 	}()
