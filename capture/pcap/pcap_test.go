@@ -2,10 +2,12 @@ package pcap
 
 import (
 	"bytes"
-	"encoding/base64"
+	"embed"
 	"io"
+	"io/fs"
 	"net"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/fako1024/slimcap/capture"
@@ -14,7 +16,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var testDataLE, testDataBE []byte
+const (
+	pcapTestInputNPackets = 6
+	testDataPath          = "testdata"
+)
+
+var testData []fs.DirEntry
 
 func TestInvalidInput(t *testing.T) {
 
@@ -53,12 +60,14 @@ func TestInvalidInput(t *testing.T) {
 
 func TestReader(t *testing.T) {
 
-	for _, testData := range [][]byte{
-		testDataLE,
-		testDataBE,
-	} {
+	for _, dirent := range testData {
+		file, err := os.Open(filepath.Join(testDataPath, dirent.Name()))
+		require.Nil(t, err)
+		defer func() {
+			require.Nil(t, file.Close())
+		}()
 
-		src, err := NewSource("pcap", bytes.NewBuffer(testData))
+		src, err := NewSource("pcap", file)
 		require.Nil(t, err)
 
 		require.Equal(t, &link.Link{
@@ -86,7 +95,7 @@ func TestReader(t *testing.T) {
 		require.Equal(t, capture.PacketUnknown, pktType)
 		require.Nil(t, ipLayer)
 
-		src.NextPacketFn(func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte) error {
+		err = src.NextPacketFn(func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte) error {
 			require.Nil(t, payload)
 			require.Zero(t, totalLen)
 			require.Equal(t, capture.PacketUnknown, pktType)
@@ -107,11 +116,14 @@ func TestReader(t *testing.T) {
 
 func TestMockPipe(t *testing.T) {
 
-	for _, testData := range [][]byte{
-		testDataLE,
-		testDataBE,
-	} {
-		src, err := NewSource("pcap", bytes.NewBuffer(testData))
+	for _, dirent := range testData {
+		file, err := os.Open(filepath.Join(testDataPath, dirent.Name()))
+		require.Nil(t, err)
+		defer func() {
+			require.Nil(t, file.Close())
+		}()
+
+		src, err := NewSource("pcap", file)
 		require.Nil(t, err)
 
 		// Setup a mock source
@@ -232,12 +244,14 @@ func TestCaptureMethods(t *testing.T) {
 }
 
 func testCaptureMethods(t *testing.T, fn func(t *testing.T, src *Source)) {
+	for _, dirent := range testData {
+		file, err := os.Open(filepath.Join(testDataPath, dirent.Name()))
+		require.Nil(t, err)
+		defer func() {
+			require.Nil(t, file.Close())
+		}()
 
-	for _, testData := range [][]byte{
-		testDataLE,
-		testDataBE,
-	} {
-		src, err := NewSource("pcap", bytes.NewBuffer(testData))
+		src, err := NewSource("pcap", file)
 		require.Nil(t, err)
 
 		for i := 0; i < pcapTestInputNPackets; i++ {
@@ -248,13 +262,13 @@ func testCaptureMethods(t *testing.T, fn func(t *testing.T, src *Source)) {
 	}
 }
 
+//go:embed testdata/*
+var pcaps embed.FS
+
 func TestMain(m *testing.M) {
 
 	var err error
-	if testDataLE, err = base64.StdEncoding.DecodeString(pcapTestInputLE); err != nil {
-		panic(err)
-	}
-	if testDataBE, err = base64.StdEncoding.DecodeString(pcapTestInputBE); err != nil {
+	if testData, err = pcaps.ReadDir(testDataPath); err != nil {
 		panic(err)
 	}
 
