@@ -1,6 +1,8 @@
 package pcap
 
 import (
+	"bufio"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"io"
@@ -15,7 +17,8 @@ import (
 
 // Source denotes a pcap file capture source
 type Source struct {
-	io.Reader
+	reader     *bufio.Reader
+	gzipReader *gzip.Reader
 
 	header        Header
 	buf           []byte
@@ -35,9 +38,15 @@ func NewSource(iface string, r io.Reader) (*Source, error) {
 	if r == nil {
 		return nil, errors.New("nil io.Reader provided")
 	}
+
 	obj := Source{
-		Reader: r,
+		reader: bufio.NewReader(r),
 		buf:    make([]byte, HeaderSize),
+	}
+
+	// Check if the source is compressed
+	if err := obj.checkCompression(); err != nil {
+		return nil, err
 	}
 
 	// Parse the main header
@@ -47,7 +56,7 @@ func NewSource(iface string, r io.Reader) (*Source, error) {
 
 	// If required, swap endianess as defined here:
 	// https://wiki.wireshark.org/Development/LibpcapFileFormat
-	obj.header = *(*Header)(unsafe.Pointer(&obj.buf[0]))
+	obj.header = *(*Header)(unsafe.Pointer(&obj.buf[0])) // #nosec G103
 	if obj.header.MagicNumber == MagicSwappedEndianess {
 		obj.header = obj.header.SwapEndianess()
 		obj.swapEndianess = true
@@ -163,8 +172,8 @@ func (s *Source) Unblock() error {
 
 // Close stops / closes the capture source
 func (s *Source) Close() error {
-	if readCloser, ok := s.Reader.(io.ReadCloser); ok {
-		return readCloser.Close()
+	if s.gzipReader != nil {
+		return s.gzipReader.Close()
 	}
 	return nil
 }
@@ -183,6 +192,30 @@ func (s *Source) PacketAddCallbackFn(fn func(payload []byte, totalLen uint32, pk
 }
 
 ////////////////////////////////////////////////////////////////////////
+
+func (s *Source) checkCompression() error {
+
+	// Check if the first two bytes match a gzip file magic in either
+	// endianess
+	magicBytes, err := s.reader.Peek(2)
+	if err != nil {
+		return err
+	}
+	if (magicBytes[0] == 0x1f && magicBytes[1] == 0x8b) ||
+		(magicBytes[0] == 0x8b && magicBytes[1] == 0x1f) {
+
+		// Attempt to open a new gzip decompressor
+		s.gzipReader, err = gzip.NewReader(s.reader)
+		if err != nil {
+			return err
+		}
+
+		// Wrap a new bufio.Reader around the gzip decompressor
+		s.reader = bufio.NewReader(s.gzipReader)
+	}
+
+	return nil
+}
 
 func (s *Source) nextPacket() (pktHeader PacketHeader, err error) {
 	pktHeader, err = s.nextPacketHeader()
@@ -209,7 +242,7 @@ func (s *Source) nextPacketHeader() (PacketHeader, error) {
 	if err := s.read(s.buf[:PacketHeaderSize]); err != nil {
 		return PacketHeader{}, err
 	}
-	return *(*PacketHeader)(unsafe.Pointer(&s.buf[0])), nil
+	return *(*PacketHeader)(unsafe.Pointer(&s.buf[0])), nil // #nosec G103
 }
 
 func (s *Source) nextPacketData(snapLen int) error {
@@ -222,7 +255,7 @@ func (s *Source) nextPacketData(snapLen int) error {
 }
 
 func (s *Source) read(buf []byte) error {
-	n, err := io.ReadAtLeast(s.Reader, buf, len(buf))
+	n, err := io.ReadAtLeast(s.reader, buf, len(buf))
 	if err != nil {
 		return err
 	}
