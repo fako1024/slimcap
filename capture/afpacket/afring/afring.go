@@ -279,7 +279,7 @@ func (s *Source) Stats() (capture.Stats, error) {
 // Unblock ensures that a potentially ongoing blocking poll operation is released (returning an ErrCaptureUnblock from
 // any potentially ongoing call to Next*() that might currently be blocked)
 func (s *Source) Unblock() error {
-	if s == nil || s.eventHandler.Efd < 0 || s.eventHandler.Fd < 0 {
+	if s == nil || s.eventHandler.Efd < 0 || !s.eventHandler.Fd.IsOpen() {
 		return errors.New("cannot call Unblock() on nil / closed capture source")
 	}
 
@@ -288,7 +288,7 @@ func (s *Source) Unblock() error {
 
 // Close stops / closes the capture source
 func (s *Source) Close() error {
-	if s == nil || s.eventHandler.Efd < 0 || s.eventHandler.Fd < 0 {
+	if s == nil || s.eventHandler.Efd < 0 || !s.eventHandler.Fd.IsOpen() {
 		return errors.New("cannot call Close() on nil / closed capture source")
 	}
 
@@ -300,8 +300,6 @@ func (s *Source) Close() error {
 		return err
 	}
 
-	s.eventHandler.Fd = -1
-
 	return nil
 }
 
@@ -310,7 +308,7 @@ func (s *Source) Free() error {
 	if s == nil {
 		return errors.New("cannot call Free() on nil capture source")
 	}
-	if s.eventHandler.Fd >= 0 {
+	if s.eventHandler.Fd.IsOpen() {
 		return errors.New("cannot call Free() on open capture source, call Close() first")
 	}
 
@@ -328,9 +326,9 @@ func (s *Source) Link() *link.Link {
 
 func (s *Source) nextPacket() error {
 
-	// If the socket is invalid the capture is obviously closed and we return the respective
+	// If the ring buffer is invalid the capture is obviously closed and we return the respective
 	// error
-	if s.eventHandler.Fd < 0 {
+	if s == nil || s.ring == nil {
 		return capture.ErrCaptureStopped
 	}
 
@@ -435,7 +433,7 @@ func (s *Source) handleEvent() error {
 
 func setupRingBuffer(sd socket.FileDescriptor, tPacketReq tPacketRequest) ([]byte, event.EvtFileDescriptor, error) {
 
-	if sd <= 0 {
+	if !sd.IsOpen() {
 		return nil, -1, errors.New("invalid socket")
 	}
 
