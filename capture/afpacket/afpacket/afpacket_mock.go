@@ -27,7 +27,7 @@ type MockSource struct {
 	*Source
 
 	mockPackets         chan capture.Packet
-	mockFd              *socket.MockFileDescriptor
+	MockFd              *socket.MockFileDescriptor
 	packetAddCallbackFn func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte)
 }
 
@@ -40,7 +40,7 @@ func (m *MockSource) PacketAddCallbackFn(fn func(payload []byte, totalLen uint32
 
 // AddPacket adds a new mock packet to the source
 // This can happen prior to calling run or continuously while consuming data
-func (m *MockSource) AddPacket(pkt capture.Packet) {
+func (m *MockSource) AddPacket(pkt capture.Packet) error {
 	m.mockPackets <- pkt
 
 	// If a callback function was provided, execute it
@@ -50,7 +50,9 @@ func (m *MockSource) AddPacket(pkt capture.Packet) {
 
 	// We count packets as "seen" when they enter the pipeline, not when they are
 	// consumed from the buffer
-	m.mockFd.IncrementPacketCount(1)
+	m.MockFd.IncrementPacketCount(1)
+
+	return nil
 }
 
 // AddPacketFromSource consumes a single packet from the provided source and adds it to the source
@@ -100,7 +102,7 @@ func NewMockSource(iface string, options ...Option) (*MockSource, error) {
 	return &MockSource{
 		Source:      src,
 		mockPackets: make(chan capture.Packet, packetBufferDepth),
-		mockFd:      mockFd,
+		MockFd:      mockFd,
 	}, nil
 }
 
@@ -156,7 +158,7 @@ func (m *MockSource) RunNoDrain() chan error {
 		// Queue / trigger a single event equivalent to receiving a new block via the PPOLL syscall and
 		// instruct the mock socket to not release the semaphore. That way data can be consumed immediately
 		// at all times
-		m.mockFd.SetNoRelease(true)
+		m.MockFd.SetNoRelease(true)
 		if err := event.ToMockHandler(m.eventHandler).SignalAvailableData(); err != nil {
 			errs <- err
 			return
@@ -165,7 +167,7 @@ func (m *MockSource) RunNoDrain() chan error {
 		// Continuously mark all blocks as available to the user at the given interval
 		for {
 			for i := 0; i < len(packets); i++ {
-				m.mockFd.Put(packets[i])
+				m.MockFd.Put(packets[i])
 			}
 		}
 	}(errChan)
@@ -187,7 +189,7 @@ func (m *MockSource) run(errChan chan error) {
 
 	for pkt := range m.mockPackets {
 
-		m.mockFd.Put(pkt)
+		m.MockFd.Put(pkt)
 
 		// Queue / trigger an event equivalent to receiving a new packet via the PPOLL syscall
 		if err := event.ToMockHandler(m.eventHandler).SignalAvailableData(); err != nil {

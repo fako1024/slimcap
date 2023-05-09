@@ -187,7 +187,7 @@ func (s *Source) NextIPPacket(pBuf capture.IPLayer) (capture.IPLayer, capture.Pa
 // must be completed prior to any subsequent call to any Next*() method.
 func (s *Source) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType capture.PacketType, ipLayerOffset byte) error) error {
 
-	if s.eventHandler.Fd == 0 {
+	if !s.eventHandler.Fd.IsOpen() {
 		return errors.New("cannot NextPacketFn() on closed capture source")
 	}
 
@@ -268,8 +268,6 @@ func (s *Source) Close() error {
 		return err
 	}
 
-	s.eventHandler.Fd = -1
-
 	return nil
 }
 
@@ -278,7 +276,7 @@ func (s *Source) Free() error {
 	if s == nil {
 		return errors.New("cannot call Free() on nil capture source")
 	}
-	if s.eventHandler.Fd >= 0 {
+	if !s.eventHandler.Fd.IsOpen() {
 		return errors.New("cannot call Free() on open capture source, call Close() first")
 	}
 
@@ -289,7 +287,7 @@ func (s *Source) Free() error {
 
 func (s *Source) nextPacketInto(data capture.Packet) (int, error) {
 
-	if s.eventHandler.Fd == 0 {
+	if !s.eventHandler.Fd.IsOpen() {
 		return -1, errors.New("cannot nextPacketInto() on closed capture source")
 	}
 
@@ -332,7 +330,7 @@ retry:
 
 func (s *Source) nextPayloadInto(data capture.IPLayer) (int, capture.PacketType, uint32, error) {
 
-	if s.eventHandler.Fd == 0 {
+	if !s.eventHandler.Fd.IsOpen() {
 		return -1, capture.PacketUnknown, 0, errors.New("cannot nextPacketInto() on closed capture source")
 	}
 
