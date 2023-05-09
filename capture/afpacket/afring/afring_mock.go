@@ -327,7 +327,5 @@ func (m *MockSource) Close() error {
 // Free releases any pending resources from the capture source (must be called after Close())
 func (m *MockSource) Free() error {
 	m.ringBuffer.ring = nil
-
-	// panic("stack")
 	return nil
 }
