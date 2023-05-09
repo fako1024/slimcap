@@ -5,6 +5,8 @@ package socket
 
 import (
 	"errors"
+	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"github.com/fako1024/slimcap/capture"
@@ -18,6 +20,8 @@ type MockFileDescriptor struct {
 
 	// NPacketsProcessed: Packet counter to provide GetSocketStats() functionality
 	nPacketsProcessed int
+
+	lastPoll int64
 
 	buf       chan capture.Packet
 	noRelease bool
@@ -44,8 +48,21 @@ func (m *MockFileDescriptor) IncrementPacketCount(delta int) {
 	m.nPacketsProcessed += delta
 }
 
+// LastPoll return the timestamp of the last poll on the FileDescriptor
+func (m *MockFileDescriptor) LastPoll() int64 {
+	return atomic.LoadInt64(&m.lastPoll)
+}
+
 // GetSocketStats returns (and resets) socket / traffic statistics
 func (m *MockFileDescriptor) GetSocketStats() (ss TPacketStats, err error) {
+	ss, err = m.GetSocketStatsNoReset()
+	m.nPacketsProcessed = 0
+
+	return
+}
+
+// GetSocketStatsNoReset returns socket / traffic statistics (without resetting the counters)
+func (m *MockFileDescriptor) GetSocketStatsNoReset() (ss TPacketStats, err error) {
 
 	if m.FileDescriptor <= 0 {
 		err = errors.New("invalid socket")
@@ -56,7 +73,6 @@ func (m *MockFileDescriptor) GetSocketStats() (ss TPacketStats, err error) {
 	ss = TPacketStats{
 		Packets: uint32(m.nPacketsProcessed),
 	}
-	m.nPacketsProcessed = 0
 
 	return
 }
@@ -71,6 +87,8 @@ func (m *MockFileDescriptor) SetNoRelease(enable bool) *MockFileDescriptor {
 // ReleaseSemaphore consumes from the event fd, releasing the semaphore and indicating
 // that the next event can be sent
 func (m *MockFileDescriptor) ReleaseSemaphore() (errno unix.Errno) {
+
+	atomic.StoreInt64(&m.lastPoll, time.Now().Unix())
 
 	// Skip if noRelease mode is set
 	if m.noRelease {
