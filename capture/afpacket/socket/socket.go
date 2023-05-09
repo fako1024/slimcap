@@ -115,6 +115,12 @@ func (sd FileDescriptor) Close() error {
 	return unix.Close(int(sd))
 }
 
+// IsOpen determines if the file descriptor is open / valid
+func (sd FileDescriptor) IsOpen() bool {
+	_, err := unix.FcntlInt(uintptr(sd), unix.F_GETFD, 0)
+	return err == nil
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////
 
 func getsockopt(fd FileDescriptor, level, name int, val unsafe.Pointer, vallen uintptr) error {
