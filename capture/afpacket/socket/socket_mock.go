@@ -18,8 +18,8 @@ import (
 type MockFileDescriptor struct {
 	FileDescriptor
 
-	// NPacketsProcessed: Packet counter to provide GetSocketStats() functionality
-	nPacketsProcessed int
+	// nPacketsProcessed: Packet counter to provide GetSocketStats() functionality
+	nPacketsProcessed uint64
 
 	lastPoll int64
 
@@ -44,8 +44,8 @@ func NewMock() (MockFileDescriptor, error) {
 
 // IncrementPacketCount allows for simulation of packet / traffic statistics by means
 // of manual counting (to be used during population of a mock data source)
-func (m *MockFileDescriptor) IncrementPacketCount(delta int) {
-	m.nPacketsProcessed += delta
+func (m *MockFileDescriptor) IncrementPacketCount(delta uint64) {
+	atomic.AddUint64(&m.nPacketsProcessed, delta)
 }
 
 // LastPoll return the timestamp of the last poll on the FileDescriptor
@@ -55,8 +55,17 @@ func (m *MockFileDescriptor) LastPoll() int64 {
 
 // GetSocketStats returns (and resets) socket / traffic statistics
 func (m *MockFileDescriptor) GetSocketStats() (ss TPacketStats, err error) {
-	ss, err = m.GetSocketStatsNoReset()
-	m.nPacketsProcessed = 0
+
+	if !m.FileDescriptor.IsOpen() {
+		err = errors.New("invalid socket")
+		return
+	}
+
+	// Retrieve TPacket stats for the socket and reset them at the same time using
+	// atomic.Swap
+	ss = TPacketStats{
+		Packets: uint32(atomic.SwapUint64(&m.nPacketsProcessed, 0)),
+	}
 
 	return
 }
@@ -64,14 +73,14 @@ func (m *MockFileDescriptor) GetSocketStats() (ss TPacketStats, err error) {
 // GetSocketStatsNoReset returns socket / traffic statistics (without resetting the counters)
 func (m *MockFileDescriptor) GetSocketStatsNoReset() (ss TPacketStats, err error) {
 
-	if m.FileDescriptor <= 0 {
+	if !m.FileDescriptor.IsOpen() {
 		err = errors.New("invalid socket")
 		return
 	}
 
 	// Retrieve TPacket stats for the socket
 	ss = TPacketStats{
-		Packets: uint32(m.nPacketsProcessed),
+		Packets: uint32(atomic.LoadUint64(&m.nPacketsProcessed)),
 	}
 
 	return
