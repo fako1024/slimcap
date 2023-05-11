@@ -95,6 +95,33 @@ func TestOptions(t *testing.T) {
 	})
 }
 
+func TestClosedSource(t *testing.T) {
+
+	// Setup a mock source
+	mockSrc, err := NewMockSource("mock",
+		CaptureLength(link.CaptureLengthMinimalIPv4Transport),
+		Promiscuous(false),
+		BufferSize(1024*1024, 5),
+	)
+	require.Nil(t, err)
+
+	// Close it right away
+	require.Nil(t, mockSrc.Close())
+
+	// Attempt to read from the source
+	pkt, err := mockSrc.NextPacket(nil)
+	require.Nil(t, pkt)
+	require.ErrorIs(t, err, capture.ErrCaptureStopped)
+
+	// Free resources
+	require.Nil(t, mockSrc.Free())
+
+	// Attempt to read from the source
+	pkt, err = mockSrc.NextPacket(nil)
+	require.Nil(t, pkt)
+	require.ErrorIs(t, err, capture.ErrCaptureStopped)
+}
+
 func TestFillRingBuffer(t *testing.T) {
 
 	// Setup the original mock source
@@ -262,6 +289,12 @@ func TestPipe(t *testing.T) {
 
 		mockSrc.FinalizeBlock(false)
 		mockSrc.Done()
+
+		require.Nil(t, <-errChan)
+		stats, err := mockSrc.Stats()
+		require.Nil(t, err)
+		require.Equal(t, capture.Stats{PacketsReceived: int(n * n)}, stats)
+		require.Nil(t, mockSrc.Close())
 	}()
 
 	// Setup the mock source used to pipe the first one
@@ -280,18 +313,17 @@ func TestPipe(t *testing.T) {
 			validatePacket(t, p, i, j)
 		}
 	}
-
-	require.Nil(t, <-errChan)
-	stats, err := mockSrc.Stats()
-	require.Nil(t, err)
-	require.Equal(t, capture.Stats{PacketsReceived: int(n * n)}, stats)
-	require.Nil(t, mockSrc.Close())
+	mockSrc2.ForceBlockRelease()
 
 	require.Nil(t, <-errChan2)
-	stats, err = mockSrc2.Stats()
+	stats, err := mockSrc2.Stats()
 	require.Nil(t, err)
 	require.Equal(t, capture.Stats{PacketsReceived: int(n * n)}, stats)
 	require.Nil(t, mockSrc2.Close())
+
+	// Cleanup resources
+	require.Nil(t, mockSrc2.Free())
+	require.Nil(t, mockSrc.Free())
 }
 
 func BenchmarkCaptureMethods(b *testing.B) {
@@ -451,6 +483,7 @@ func testCaptureMethods(t *testing.T, fn func(t *testing.T, _ *MockSource, _, _ 
 			fn(t, mockSrc, i, j)
 		}
 	}
+	mockSrc.ForceBlockRelease()
 
 	// Block and check for any errors that may have happened in the goroutine
 	require.Nil(t, <-errChan)

@@ -6,6 +6,7 @@ package afring
 import (
 	"fmt"
 	"math"
+	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -105,11 +106,11 @@ func (t tPacketHeader) privOffset() uint32 {
 
 // / -> Block Header
 func (t tPacketHeader) getStatus() uint32 {
-	return *(*uint32)(unsafe.Pointer(&t.data[8]))
+	return atomic.LoadUint32((*uint32)(unsafe.Pointer(&t.data[8])))
 }
 
 func (t tPacketHeader) setStatus(status uint32) {
-	*(*uint32)(unsafe.Pointer(&t.data[8])) = status
+	atomic.StoreUint32((*uint32)(unsafe.Pointer(&t.data[8])), status)
 }
 
 func (t tPacketHeader) nPkts() uint32 {

@@ -140,6 +140,7 @@ func TestMockPipe(t *testing.T) {
 			require.Equal(t, capture.PacketUnknown, p.Type())
 			require.NotZero(t, p.TotalLen())
 		}
+		mockSrc.ForceBlockRelease()
 
 		// Block and check for any errors that may have happened while piping
 		require.Nil(t, <-errChan)
