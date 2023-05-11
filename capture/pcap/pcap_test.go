@@ -131,7 +131,7 @@ func TestMockPipe(t *testing.T) {
 			afring.CaptureLength(link.CaptureLengthMinimalIPv4Transport),
 		)
 		require.Nil(t, err)
-		errChan := mockSrc.Pipe(src)
+		errChan := mockSrc.Pipe(src, nil)
 
 		for i := 0; i < pcapTestInputNPackets; i++ {
 			p, err := mockSrc.NextPacket(nil)

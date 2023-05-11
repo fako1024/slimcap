@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/capture/afpacket/socket"
@@ -63,9 +64,7 @@ func (m *MockSource) AddPacketFromSource(src capture.Source) error {
 		return err
 	}
 
-	m.AddPacket(pkt)
-
-	return nil
+	return m.AddPacket(pkt)
 }
 
 // NewMockSource instantiates a new mock direct AF_PACKET source, wrapping a regular Source
@@ -113,20 +112,26 @@ func (m *MockSource) CanAddPackets() bool {
 }
 
 // Pipe continuously pipes packets from the provided source through this one
-func (m *MockSource) Pipe(src capture.Source) chan error {
+func (m *MockSource) Pipe(src capture.Source, doneReadingChan chan struct{}) chan error {
 	errChan := make(chan error)
-	go func(errs chan error) {
+
+	go func(errs chan error, done chan struct{}) {
 		for {
 			if err := m.AddPacketFromSource(src); err != nil {
 				if errors.Is(err, io.EOF) || errors.Is(err, capture.ErrCaptureStopped) {
 					m.Done()
+
+					if done != nil {
+						done <- struct{}{}
+					}
 					return
 				}
+
 				errs <- err
 				return
 			}
 		}
-	}(errChan)
+	}(errChan, doneReadingChan)
 	go m.run(errChan)
 
 	return errChan
@@ -179,6 +184,17 @@ func (m *MockSource) RunNoDrain() chan error {
 // filling routine / channel to terminate once all packets have been written to the ring buffer
 func (m *MockSource) Done() {
 	close(m.mockPackets)
+}
+
+// Close stops / closes the capture source
+func (m *MockSource) Close() error {
+
+	// Wait until all blocks have been consumed
+	for event.ToMockHandler(m.eventHandler).HasPackets() {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	return m.Source.Close()
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////

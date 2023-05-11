@@ -3,7 +3,9 @@ package afpacket
 import (
 	"fmt"
 	"net"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/link"
@@ -44,6 +46,30 @@ func TestOptions(t *testing.T) {
 			require.Equal(t, isPromisc, mockSrc.isPromisc)
 		}
 	})
+}
+
+func TestUnblockOnClose(t *testing.T) {
+
+	mockSrc, err := NewMockSource("mock",
+		Promiscuous(false),
+	)
+	require.Nil(t, err)
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func(wg *sync.WaitGroup) {
+		_, err := mockSrc.NextPacket(nil)
+		require.ErrorIs(t, capture.ErrCaptureStopped, err)
+
+		wg.Done()
+	}(wg)
+
+	// Since there is no way to know if the goroutine is actually
+	// already blocking we have to wait a sufficient amount of time
+	time.Sleep(time.Second)
+	require.Nil(t, mockSrc.Close())
+
+	wg.Wait()
 }
 
 func TestCaptureMethods(t *testing.T) {
@@ -157,10 +183,17 @@ func TestPipe(t *testing.T) {
 					6, []byte{byte(i), byte(j)}, byte(i+j)%5, int(i+j))
 				require.Nil(t, err)
 
-				mockSrc.AddPacket(p)
+				require.Nil(t, mockSrc.AddPacket(p))
 			}
 		}
+
 		mockSrc.Done()
+
+		require.Nil(t, <-errChan)
+		stats, err := mockSrc.Stats()
+		require.Nil(t, err)
+		require.Equal(t, capture.Stats{PacketsReceived: int(n * n)}, stats)
+		require.Nil(t, mockSrc.Close())
 	}()
 
 	// Setup the mock source used to pipe the first one
@@ -169,7 +202,9 @@ func TestPipe(t *testing.T) {
 		Promiscuous(false),
 	)
 	require.Nil(t, err)
-	errChan2 := mockSrc2.Pipe(mockSrc)
+
+	readDoneChan := make(chan struct{}, 1)
+	errChan2 := mockSrc2.Pipe(mockSrc, readDoneChan)
 
 	// Consume data from the source via the respective method
 	for i := uint16(1); i <= n; i++ {
@@ -179,15 +214,10 @@ func TestPipe(t *testing.T) {
 			validatePacket(t, p, i, j)
 		}
 	}
-
-	require.Nil(t, <-errChan)
-	stats, err := mockSrc.Stats()
-	require.Nil(t, err)
-	require.Equal(t, capture.Stats{PacketsReceived: int(n * n)}, stats)
-	require.Nil(t, mockSrc.Close())
+	<-readDoneChan
 
 	require.Nil(t, <-errChan2)
-	stats, err = mockSrc2.Stats()
+	stats, err := mockSrc2.Stats()
 	require.Nil(t, err)
 	require.Equal(t, capture.Stats{PacketsReceived: int(n * n)}, stats)
 	require.Nil(t, mockSrc2.Close())
@@ -302,6 +332,8 @@ func testCaptureMethods(t *testing.T, fn func(t *testing.T, src *MockSource, i, 
 		for j := uint16(1); j <= n; j++ {
 			fn(t, mockSrc, i, j)
 		}
+		_, err := mockSrc.MockFd.GetSocketStatsNoReset()
+		require.Nil(t, err)
 	}
 
 	// Block and check for any errors that may have happened in the goroutine
