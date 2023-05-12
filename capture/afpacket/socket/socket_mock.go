@@ -126,6 +126,10 @@ func (m *MockFileDescriptor) Get() capture.Packet {
 	return <-m.buf
 }
 
+func (m *MockFileDescriptor) HasPackets() bool {
+	return len(m.buf) > 0
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////
 
 func read(fd int, p []byte) (int, unix.Errno) {

@@ -35,6 +35,7 @@ type MockSource struct {
 
 	mockBlocks     chan int
 	mockBlockCount int
+	isNoDrain      bool
 
 	MockFd *socket.MockFileDescriptor
 
@@ -185,26 +186,31 @@ func (m *MockSource) CanAddPackets() bool {
 
 // Pipe continuously pipes packets from the provided source through this one, mimicking
 // the ring buffer / TPacketHeader block retirement setting for population of the ring buffer
-func (m *MockSource) Pipe(src capture.Source) chan error {
-	errChan := make(chan error)
+func (m *MockSource) Pipe(src capture.Source, doneReadingChan chan struct{}) (errChan chan error) {
+	errChan = make(chan error)
 
-	go func(errs chan error) {
+	go func(errs chan error, done chan struct{}) {
 		for {
 			if err := m.AddPacketFromSource(src); err != nil {
 				if errors.Is(err, io.EOF) || errors.Is(err, capture.ErrCaptureStopped) {
 					m.FinalizeBlock(false)
 					m.Done()
 
+					if done != nil {
+						done <- struct{}{}
+					}
 					return
 				}
+
 				errs <- err
 				return
 			}
 		}
-	}(errChan)
+	}(errChan, doneReadingChan)
+
 	go m.run(errChan)
 
-	return errChan
+	return
 }
 
 // Run executes processing of packets in the background, mimicking the function of an actual kernel
@@ -222,7 +228,9 @@ func (m *MockSource) Run() chan error {
 // mock implementation itself
 func (m *MockSource) RunNoDrain(releaseInterval time.Duration) chan error {
 
+	m.isNoDrain = true
 	m.FinalizeBlock(false)
+	m.MockFd.SetNoRelease(true)
 
 	errChan := make(chan error)
 	go func(errs chan error) {
@@ -232,7 +240,6 @@ func (m *MockSource) RunNoDrain(releaseInterval time.Duration) chan error {
 		// Queue / trigger a single event equivalent to receiving a new block via the PPOLL syscall and
 		// instruct the mock socket to not release the semaphore. That way data can be consumed immediately
 		// at all times
-		m.MockFd.SetNoRelease(true)
 		if err := event.ToMockHandler(m.eventHandler).SignalAvailableData(); err != nil {
 			errs <- err
 			return
@@ -317,8 +324,12 @@ func (m *MockSource) hasUserlandBlock() bool {
 func (m *MockSource) Close() error {
 
 	// Wait until all blocks have been retuned to the mock kernel
-	for m.hasUserlandBlock() {
-		time.Sleep(10 * time.Millisecond)
+	if m.isNoDrain {
+		m.ringBuffer.ring = nil
+	} else {
+		for m.hasUserlandBlock() {
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
 
 	return m.Source.Close()

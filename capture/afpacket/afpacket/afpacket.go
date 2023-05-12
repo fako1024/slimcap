@@ -188,7 +188,7 @@ func (s *Source) NextIPPacket(pBuf capture.IPLayer) (capture.IPLayer, capture.Pa
 func (s *Source) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType capture.PacketType, ipLayerOffset byte) error) error {
 
 	if !s.eventHandler.Fd.IsOpen() {
-		return errors.New("cannot NextPacketFn() on closed capture source")
+		return capture.ErrCaptureStopped
 	}
 
 retry:
@@ -288,7 +288,7 @@ func (s *Source) Free() error {
 func (s *Source) nextPacketInto(data capture.Packet) (int, error) {
 
 	if !s.eventHandler.Fd.IsOpen() {
-		return -1, errors.New("cannot nextPacketInto() on closed capture source")
+		return -1, capture.ErrCaptureStopped
 	}
 
 retry:
@@ -331,7 +331,7 @@ retry:
 func (s *Source) nextPayloadInto(data capture.IPLayer) (int, capture.PacketType, uint32, error) {
 
 	if !s.eventHandler.Fd.IsOpen() {
-		return -1, capture.PacketUnknown, 0, errors.New("cannot nextPacketInto() on closed capture source")
+		return -1, capture.PacketUnknown, 0, capture.ErrCaptureStopped
 	}
 
 retry:

@@ -48,6 +48,11 @@ func (m *MockHandler) SignalAvailableData() error {
 	return m.write([]byte{1, 0, 0, 0, 0, 0, 0, 0})
 }
 
+// HasPackets returns if there are packets in the underlying mock socket
+func (m *MockHandler) HasPackets() bool {
+	return m.mockFd.HasPackets()
+}
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
 func (m *MockHandler) write(data []byte) error {
