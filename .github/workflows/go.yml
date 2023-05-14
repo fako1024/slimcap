@@ -39,3 +39,6 @@ jobs:
 
     - name: Test
       run: go test -v ./...
+
+    - name: Race Detector
+      run: go test -race -v ./...
