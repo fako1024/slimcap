@@ -123,6 +123,34 @@ func TestClosedSource(t *testing.T) {
 	require.ErrorIs(t, err, capture.ErrCaptureStopped)
 }
 
+func TestClosedSourceNoDrain(t *testing.T) {
+
+	// Setup a mock source
+	mockSrc, err := NewMockSourceNoDrain("mock",
+		CaptureLength(link.CaptureLengthMinimalIPv4Transport),
+		Promiscuous(false),
+		BufferSize(1024*1024, 5),
+	)
+	require.Nil(t, err)
+	mockSrc.Run(time.Millisecond)
+
+	// Close it right away
+	require.Nil(t, mockSrc.Close())
+
+	// Attempt to read from the source
+	pkt, err := mockSrc.NextPacket(nil)
+	require.Nil(t, pkt)
+	require.ErrorIs(t, err, capture.ErrCaptureStopped)
+
+	// Free resources
+	require.Nil(t, mockSrc.Free())
+
+	// Attempt to read from the source
+	pkt, err = mockSrc.NextPacket(nil)
+	require.Nil(t, pkt)
+	require.ErrorIs(t, err, capture.ErrCaptureStopped)
+}
+
 func TestFillRingBuffer(t *testing.T) {
 
 	// Setup the original mock source
@@ -366,7 +394,7 @@ func BenchmarkCaptureMethods(b *testing.B) {
 	require.Nil(b, err)
 
 	// Setup a mock source
-	mockSrc, err := NewMockSource("mock",
+	mockSrc, err := NewMockSourceNoDrain("mock",
 		CaptureLength(link.CaptureLengthMinimalIPv4Transport),
 		Promiscuous(false),
 	)
@@ -375,7 +403,7 @@ func BenchmarkCaptureMethods(b *testing.B) {
 	for mockSrc.CanAddPackets() {
 		require.Nil(b, mockSrc.AddPacket(testPacket))
 	}
-	mockSrc.RunNoDrain(time.Microsecond)
+	mockSrc.Run(time.Microsecond)
 
 	b.Run("NextPacket", func(b *testing.B) {
 		b.ReportAllocs()

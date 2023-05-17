@@ -35,7 +35,6 @@ type MockSource struct {
 
 	mockBlocks     chan int
 	mockBlockCount int
-	isNoDrain      bool
 
 	MockFd *socket.MockFileDescriptor
 
@@ -215,51 +214,9 @@ func (m *MockSource) Pipe(src capture.Source, doneReadingChan chan struct{}) (er
 
 // Run executes processing of packets in the background, mimicking the function of an actual kernel
 // packet ring buffer
-func (m *MockSource) Run() chan error {
+func (m *MockSource) Run() <-chan error {
 	errChan := make(chan error)
 	go m.run(errChan)
-
-	return errChan
-}
-
-// RunNoDrain acts as a high-throughput mode to allow continuous reading the same data currently in the
-// mock buffer without consuming it and with minimal overhead from handling the mock socket / semaphore
-// It is intended to be used in benchmarks using the mock source to minimize measurement noise from the
-// mock implementation itself
-func (m *MockSource) RunNoDrain(releaseInterval time.Duration) chan error {
-
-	m.isNoDrain = true
-	m.FinalizeBlock(false)
-	m.MockFd.SetNoRelease(true)
-
-	errChan := make(chan error)
-	go func(errs chan error) {
-
-		defer close(errs)
-
-		// Queue / trigger a single event equivalent to receiving a new block via the PPOLL syscall and
-		// instruct the mock socket to not release the semaphore. That way data can be consumed immediately
-		// at all times
-		if err := event.ToMockHandler(m.eventHandler).SignalAvailableData(); err != nil {
-			errs <- err
-			return
-		}
-
-		// Continuously mark all blocks as available to the user at the given interval
-		for {
-			for i := 0; i < m.nBlocks; i++ {
-
-				// If the ring buffer is empty it was apparently closed / free'd
-				if len(m.ringBuffer.ring) == 0 {
-					errs <- nil
-					return
-				}
-
-				m.markBlock(i, unix.TP_STATUS_USER)
-				time.Sleep(releaseInterval)
-			}
-		}
-	}(errChan)
 
 	return errChan
 }
@@ -280,7 +237,7 @@ func (m *MockSource) ForceBlockRelease() {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
-func (m *MockSource) run(errChan chan error) {
+func (m *MockSource) run(errChan chan<- error) {
 	defer close(errChan)
 
 	for block := range m.mockBlocks {
@@ -323,13 +280,9 @@ func (m *MockSource) hasUserlandBlock() bool {
 // Close stops / closes the capture source
 func (m *MockSource) Close() error {
 
-	// Wait until all blocks have been retuned to the mock kernel
-	if m.isNoDrain {
-		m.ringBuffer.ring = nil
-	} else {
-		for m.hasUserlandBlock() {
-			time.Sleep(10 * time.Millisecond)
-		}
+	// Ensure that all blocks / packets have been consumed
+	for m.hasUserlandBlock() {
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	return m.Source.Close()
@@ -337,6 +290,9 @@ func (m *MockSource) Close() error {
 
 // Free releases any pending resources from the capture source (must be called after Close())
 func (m *MockSource) Free() error {
+	for m.MockFd.IsOpen() {
+		time.Sleep(10 * time.Millisecond)
+	}
 	m.ringBuffer.ring = nil
 	return nil
 }
