@@ -65,8 +65,10 @@ func NewMockSource(iface string, options ...Option) (*MockSource, error) {
 				Flags:        net.FlagUp,
 			},
 		},
-		Mutex:        sync.Mutex{},
-		ringBuffer:   ringBuffer{},
+		Mutex: sync.Mutex{},
+		ringBuffer: ringBuffer{
+			curTPacketHeader: new(tPacketHeader),
+		},
 		eventHandler: mockHandler,
 	}
 

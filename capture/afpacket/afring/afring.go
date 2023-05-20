@@ -28,8 +28,8 @@ type ringBuffer struct {
 	offset           int
 }
 
-func (b *ringBuffer) nextTPacketHeader() *tPacketHeader {
-	return &tPacketHeader{data: b.ring[b.offset*int(b.tpReq.blockSize):]}
+func (b *ringBuffer) nextTPacketHeader() {
+	b.curTPacketHeader.data = b.ring[b.offset*int(b.tpReq.blockSize):]
 }
 
 // Source denotes an AF_PACKET capture source making use of a ring buffer
@@ -105,6 +105,7 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 	}
 
 	// Setup ring buffer
+	src.ringBuffer.curTPacketHeader = new(tPacketHeader)
 	src.ringBuffer.ring, src.eventHandler.Efd, err = setupRingBuffer(src.eventHandler.Fd, src.tpReq)
 	if err != nil {
 		src.eventHandler.Fd.Close()
@@ -335,9 +336,9 @@ func (s *Source) nextPacket() error {
 	// If the current TPacketHeader does not contain any more packets (or is uninitialized)
 	// fetch a new one from the ring buffer
 fetch:
-	if s.curTPacketHeader == nil || s.unblocked {
+	if s.curTPacketHeader.data == nil || s.unblocked {
 		if !s.unblocked {
-			s.curTPacketHeader = s.nextTPacketHeader()
+			s.nextTPacketHeader()
 		}
 		for s.curTPacketHeader.getStatus()&unix.TP_STATUS_USER == 0 || s.unblocked {
 
@@ -370,7 +371,7 @@ fetch:
 				}
 				s.curTPacketHeader.setStatus(unix.TP_STATUS_KERNEL)
 				s.offset = (s.offset + 1) % int(s.tpReq.blockNr)
-				s.curTPacketHeader = s.nextTPacketHeader()
+				s.nextTPacketHeader()
 
 				continue
 			}
@@ -390,7 +391,7 @@ fetch:
 			}
 			s.curTPacketHeader.setStatus(unix.TP_STATUS_KERNEL)
 			s.offset = (s.offset + 1) % int(s.tpReq.blockNr)
-			s.curTPacketHeader = nil
+			s.curTPacketHeader.data = nil
 			goto fetch
 		}
 
