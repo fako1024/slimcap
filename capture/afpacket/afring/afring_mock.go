@@ -79,7 +79,7 @@ func NewMockSource(iface string, options ...Option) (*MockSource, error) {
 	if src.ringBuffer.tpReq, err = newTPacketRequestForBuffer(src.blockSize, src.nBlocks, src.snapLen); err != nil {
 		return nil, err
 	}
-	src.ringBuffer.tpReq.retire_blk_tov = tPacketDefaultBlockTOV
+	src.ringBuffer.tpReq.retireBlkTov = tPacketDefaultBlockTOV
 	src.ringBuffer.ring = make([]byte, src.ringBuffer.tpReq.blockNr*src.ringBuffer.tpReq.blockSize)
 
 	return &MockSource{

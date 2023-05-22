@@ -35,9 +35,9 @@ type tPacketRequest struct {
 	frameSize uint32
 	frameNr   uint32
 
-	retire_blk_tov   uint32
-	sizeof_priv      uint32
-	feature_req_word uint32
+	retireBlkTov   uint32
+	sizeofPriv     uint32
+	featureReqWord uint32
 }
 
 func newTPacketRequestForBuffer(blockSize, nBlocks, snapLen int) (req tPacketRequest, err error) {
@@ -73,11 +73,11 @@ func newTPacketRequest(blockSize, blockNr, frameSize int) (req tPacketRequest, e
 	// frameSize must be a multiple of tPacketAlignment
 	// frameNr  must be exactly (blockSize*blockNr) / frameSize
 	req = tPacketRequest{
-		blockSize:      uint32(blockSize),
-		blockNr:        uint32(blockNr),
-		frameSize:      uint32(frameSize),
-		frameNr:        (uint32(blockSize) * uint32(blockNr)) / uint32(frameSize),
-		retire_blk_tov: tPacketDefaultBlockTOV,
+		blockSize:    uint32(blockSize),
+		blockNr:      uint32(blockNr),
+		frameSize:    uint32(frameSize),
+		frameNr:      (uint32(blockSize) * uint32(blockNr)) / uint32(frameSize),
+		retireBlkTov: tPacketDefaultBlockTOV,
 	}
 
 	return
@@ -95,15 +95,6 @@ type tPacketHeader struct {
 	nPktsLeft uint32
 }
 
-// / -> Block Descriptor
-func (t tPacketHeader) version() uint32 {
-	return *(*uint32)(unsafe.Pointer(&t.data[0]))
-}
-
-func (t tPacketHeader) privOffset() uint32 {
-	return *(*uint32)(unsafe.Pointer(&t.data[4]))
-}
-
 // / -> Block Header
 func (t tPacketHeader) getStatus() uint32 {
 	return atomic.LoadUint32((*uint32)(unsafe.Pointer(&t.data[8])))
@@ -119,15 +110,6 @@ func (t tPacketHeader) nPkts() uint32 {
 
 func (t tPacketHeader) offsetToFirstPkt() uint32 {
 	return *(*uint32)(unsafe.Pointer(&t.data[16]))
-}
-
-func (t tPacketHeader) blockLen() uint32 {
-	return *(*uint32)(unsafe.Pointer(&t.data[20]))
-}
-
-// According to linux/if_packet.h this is aligned to an 8-byte boundary instead of 4.
-func (t tPacketHeader) seqNumber() uint64 {
-	return *(*uint64)(unsafe.Pointer(&t.data[24]))
 }
 
 // 2 * 3 * uint32 for timestamps
@@ -151,55 +133,18 @@ func (t tPacketHeader) pktLenPut(data []byte) {
 	copy(data, t.data[t.ppos+16:t.ppos+20])
 }
 
-func (t tPacketHeader) getPacketStatus() uint32 {
-	return *(*uint32)(unsafe.Pointer(&t.data[t.ppos+20]))
-}
-
-func (t tPacketHeader) setPacketStatus(status uint32) {
-	*(*uint32)(unsafe.Pointer(&t.data[t.ppos+20])) = status
-}
-
-func (t tPacketHeader) mac() uint16 {
-	return *(*uint16)(unsafe.Pointer(&t.data[t.ppos+24]))
-}
-
-func (t tPacketHeader) net() uint16 {
-	return *(*uint16)(unsafe.Pointer(&t.data[t.ppos+26]))
-}
-
 func (t tPacketHeader) packetType() byte {
 	return t.data[t.ppos+58]
 }
 
-func (t tPacketHeader) payloadNoCopy() []byte {
-	mac := uint32(*(*uint16)(unsafe.Pointer(&t.data[t.ppos+24])))
-	return t.data[t.ppos+mac : t.ppos+mac+t.snapLen()]
-}
-
 func (t tPacketHeader) payloadNoCopyAtOffset(offset, to uint32) []byte {
-	mac := uint32(*(*uint16)(unsafe.Pointer(&t.data[t.ppos+24])))
-	return t.data[t.ppos+mac+offset : t.ppos+mac+to]
-}
-
-func (t tPacketHeader) payloadCopyPut(data []byte) {
-	mac := uint32(*(*uint16)(unsafe.Pointer(&t.data[t.ppos+24])))
-	copy(data, t.data[t.ppos+mac:t.ppos+mac+t.snapLen()])
+	pos := t.ppos + uint32(*(*uint16)(unsafe.Pointer(&t.data[t.ppos+24])))
+	return t.data[pos+offset : pos+to]
 }
 
 func (t tPacketHeader) payloadCopyPutAtOffset(data []byte, offset, to uint32) {
-	mac := uint32(*(*uint16)(unsafe.Pointer(&t.data[t.ppos+24])))
-	copy(data, t.data[t.ppos+mac+offset:t.ppos+mac+to])
-}
-
-func (t tPacketHeader) payloadCopy() []byte {
-	rawPayload := t.payloadNoCopy()
-	cpPayload := make([]byte, len(rawPayload))
-	copy(cpPayload, rawPayload)
-	return cpPayload
-}
-
-func tPacketAlign(x int) int {
-	return int((uint(x) + tPacketAlignment - 1) &^ (tPacketAlignment - 1))
+	pos := t.ppos + uint32(*(*uint16)(unsafe.Pointer(&t.data[t.ppos+24])))
+	copy(data, t.data[pos+offset:pos+to])
 }
 
 func pageSizeAlign(x int) int {
@@ -231,3 +176,41 @@ func blockSizeTPacketAlign(x, blockSize int) (int, error) {
 
 	return 0, fmt.Errorf("no valid frame size found for capture length %d / block size %d", x, blockSize)
 }
+
+//////////////////////////////////////////////////////////////////////////////
+// The following methods are currently unused but kept commented in case they
+// become relevant in the future
+
+// / -> Block Descriptor
+// func (t tPacketHeader) version() uint32 {
+// 	return *(*uint32)(unsafe.Pointer(&t.data[0]))
+// }
+
+// func (t tPacketHeader) privOffset() uint32 {
+// 	return *(*uint32)(unsafe.Pointer(&t.data[4]))
+// }
+
+// func (t tPacketHeader) blockLen() uint32 {
+// 	return *(*uint32)(unsafe.Pointer(&t.data[20]))
+// }
+
+// According to linux/if_packet.h this is aligned to an 8-byte boundary instead of 4.
+// func (t tPacketHeader) seqNumber() uint64 {
+// 	return *(*uint64)(unsafe.Pointer(&t.data[24]))
+// }
+
+// func (t tPacketHeader) getPacketStatus() uint32 {
+// 	return *(*uint32)(unsafe.Pointer(&t.data[t.ppos+20]))
+// }
+
+// func (t tPacketHeader) setPacketStatus(status uint32) {
+// 	*(*uint32)(unsafe.Pointer(&t.data[t.ppos+20])) = status
+// }
+
+// func (t tPacketHeader) mac() uint16 {
+// 	return *(*uint16)(unsafe.Pointer(&t.data[t.ppos+24]))
+// }
+
+// func (t tPacketHeader) net() uint16 {
+// 	return *(*uint16)(unsafe.Pointer(&t.data[t.ppos+26]))
+// }
