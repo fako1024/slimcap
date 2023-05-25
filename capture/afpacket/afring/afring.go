@@ -154,7 +154,7 @@ func (s *Source) NextPacket(pBuf capture.Packet) (capture.Packet, error) {
 	data[0] = s.curTPacketHeader.packetType()
 	data[1] = s.ipLayerOffset
 	s.curTPacketHeader.pktLenPut(data[2:6])
-	s.curTPacketHeader.payloadCopyPut(data[6:])
+	s.curTPacketHeader.payloadCopyPutAtOffset(data[6:], 0, uint32(snapLen))
 	if snapLen+capture.PacketHdrOffset < len(data) {
 		data = data[:capture.PacketHdrOffset+snapLen]
 	}
@@ -258,7 +258,10 @@ func (s *Source) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType c
 		return err
 	}
 
-	return fn(s.curTPacketHeader.payloadNoCopy(), s.curTPacketHeader.pktLen(), s.curTPacketHeader.packetType(), s.ipLayerOffset)
+	return fn(s.curTPacketHeader.payloadNoCopyAtOffset(0, s.curTPacketHeader.snapLen()),
+		s.curTPacketHeader.pktLen(),
+		s.curTPacketHeader.packetType(),
+		s.ipLayerOffset)
 }
 
 // Stats returns (and clears) the packet counters of the underlying source
@@ -407,7 +410,7 @@ fetch:
 	}
 
 	if s.curTPacketHeader.pktLen() == 0 {
-		fmt.Println(s.link.Name, "skipping empty TPacketHeader, please check if anything weird is happening in your application !!! Info:", s.curTPacketHeader.ppos, "/", s.tpReq.blockSize, s.curTPacketHeader.mac(), s.curTPacketHeader.packetType(), s.curTPacketHeader.nextOffset())
+		fmt.Println(s.link.Name, "skipping empty TPacketHeader, please check if anything weird is happening in your application !!! Info:", s.curTPacketHeader.ppos, "/", s.tpReq.blockSize, *(*uint16)(unsafe.Pointer(&s.curTPacketHeader.data[s.curTPacketHeader.ppos+24])), s.curTPacketHeader.packetType(), s.curTPacketHeader.nextOffset())
 		goto fetch
 	}
 
@@ -446,6 +449,7 @@ func setupRingBuffer(sd socket.FileDescriptor, tPacketReq tPacketRequest) ([]byt
 	}
 
 	// Set socket option to use PACKET_RX_RING
+	// #nosec G103
 	if err := sd.SetupRingBuffer(unsafe.Pointer(&tPacketReq), unsafe.Sizeof(tPacketReq)); err != nil {
 		return nil, -1, fmt.Errorf("failed to call ring buffer instruction: %w", err)
 	}
