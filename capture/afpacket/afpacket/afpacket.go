@@ -390,7 +390,7 @@ func (s *Source) handleEvent() error {
 	if efdData[7] > 0 {
 		return capture.ErrCaptureStopped
 	}
-	return capture.ErrCaptureUnblock
+	return capture.ErrCaptureUnblocked
 }
 
 // Unfortunately there is no ancillary information about the raw / original total size

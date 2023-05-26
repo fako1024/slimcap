@@ -432,7 +432,7 @@ func (s *Source) handleEvent() error {
 	if efdData[7] > 0 {
 		return capture.ErrCaptureStopped
 	}
-	return capture.ErrCaptureUnblock
+	return capture.ErrCaptureUnblocked
 }
 
 func setupRingBuffer(sd socket.FileDescriptor, tPacketReq tPacketRequest) ([]byte, event.EvtFileDescriptor, error) {

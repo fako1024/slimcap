@@ -20,8 +20,8 @@ var (
 	// ErrCaptureStopped denotes that the capture was stopped
 	ErrCaptureStopped = errors.New("capture was stopped")
 
-	// ErrCaptureUnblock denotes that the capture received am unblocking signal
-	ErrCaptureUnblock = errors.New("capture was released / unblocked")
+	// ErrCaptureUnblock denotes that the capture received an unblocking signal
+	ErrCaptureUnblocked = errors.New("capture was released / unblocked")
 )
 
 // Stats denotes a packet capture stats structure providing basic counters
