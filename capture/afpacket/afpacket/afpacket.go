@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/fako1024/slimcap/capture"
@@ -268,19 +269,10 @@ func (s *Source) Close() error {
 		return err
 	}
 
-	return nil
-}
-
-// Free releases any pending resources from the capture source (must be called after Close())
-func (s *Source) Free() error {
-	if s == nil {
-		return errors.New("cannot call Free() on nil capture source")
+	// Wait until the file descriptor is closed
+	for s.eventHandler.Fd.IsOpen() {
+		time.Sleep(10 * time.Millisecond)
 	}
-	if !s.eventHandler.Fd.IsOpen() {
-		return errors.New("cannot call Free() on open capture source, call Close() first")
-	}
-
-	s.buf = nil
 
 	return nil
 }
