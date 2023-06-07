@@ -109,7 +109,6 @@ func TestReader(t *testing.T) {
 		require.Equal(t, capture.Stats{PacketsReceived: pcapTestInputNPackets}, stats)
 
 		require.Nil(t, src.Close())
-		require.Nil(t, src.Free())
 	}
 
 }

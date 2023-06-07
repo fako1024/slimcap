@@ -175,11 +175,6 @@ func (s *Source) Close() error {
 	if s.gzipReader != nil {
 		return s.gzipReader.Close()
 	}
-	return nil
-}
-
-// Free releases any pending resources from the capture source (must be called after Close())
-func (s *Source) Free() error {
 	s.buf = nil
 	return nil
 }
