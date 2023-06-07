@@ -287,14 +287,7 @@ func (m *MockSource) Close() error {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	return m.Source.Close()
-}
-
-// Free releases any pending resources from the capture source (must be called after Close())
-func (m *MockSource) Free() error {
-	for m.MockFd.IsOpen() {
-		time.Sleep(10 * time.Millisecond)
-	}
-	m.ringBuffer.ring = nil
-	return nil
+	// Close the capture source (but skip the unmap() operation as it would fail
+	// on the conventional ring buffer slice)
+	return m.Source.close()
 }

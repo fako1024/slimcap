@@ -62,7 +62,7 @@ func (m *MockSourceNoDrain) Run(releaseInterval time.Duration) <-chan error {
 		for {
 			for i := 0; i < m.nBlocks; i++ {
 
-				// If the mocks source is closing retun
+				// If the mock source is closing return
 				if m.closing.Load() {
 					m.doneClosing <- struct{}{}
 					errs <- nil
@@ -94,5 +94,7 @@ func (m *MockSourceNoDrain) Close() error {
 	// Ensure that the Run() routine has terminated to avoid a race condition
 	<-m.doneClosing
 
-	return m.Source.Close()
+	// Close the capture source (but skip the unmap() operation as it would fail
+	// on the conventional ring buffer slice)
+	return m.Source.close()
 }

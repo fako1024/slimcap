@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/fako1024/slimcap/capture"
@@ -292,35 +293,36 @@ func (s *Source) Unblock() error {
 
 // Close stops / closes the capture source
 func (s *Source) Close() error {
+	return s.closeAndUnmap()
+}
+
+func (s *Source) close() error {
 	if s == nil || s.eventHandler.Efd < 0 || !s.eventHandler.Fd.IsOpen() {
 		return errors.New("cannot call Close() on nil / closed capture source")
 	}
 
+	// Close file / event descriptors
 	if err := s.eventHandler.Efd.Signal(event.SignalStop); err != nil {
 		return err
 	}
-
 	if err := s.eventHandler.Fd.Close(); err != nil {
 		return err
+	}
+
+	// Wait until the file descriptor is closed
+	for s.eventHandler.Fd.IsOpen() {
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	return nil
 }
 
-// Free releases any pending resources from the capture source (must be called after Close())
-func (s *Source) Free() error {
-	if s == nil {
-		return errors.New("cannot call Free() on nil capture source")
-	}
-	if s.eventHandler.Fd.IsOpen() {
-		return errors.New("cannot call Free() on open capture source, call Close() first")
+func (s *Source) closeAndUnmap() error {
+	if err := s.close(); err != nil {
+		return err
 	}
 
-	if s.ring != nil {
-		return unix.Munmap(s.ring)
-	}
-
-	return nil
+	return unix.Munmap(s.ring)
 }
 
 // Link returns the underlying link
@@ -329,12 +331,6 @@ func (s *Source) Link() *link.Link {
 }
 
 func (s *Source) nextPacket() error {
-
-	// If the ring buffer is invalid the capture is obviously closed and we return the respective
-	// error
-	if s == nil || s.ring == nil {
-		return capture.ErrCaptureStopped
-	}
 
 	// If the current TPacketHeader does not contain any more packets (or is uninitialized)
 	// fetch a new one from the ring buffer
@@ -350,6 +346,10 @@ fetch:
 				s.unblocked = false
 			}
 
+			// If the file descriptor / socket is closed then so is the capture
+			if !s.eventHandler.Fd.IsOpen() {
+				return capture.ErrCaptureStopped
+			}
 			efdHasEvent, errno := s.eventHandler.Poll(unix.POLLIN | unix.POLLERR)
 
 			// If an event was received, ensure that the respective error is returned
@@ -364,7 +364,10 @@ fetch:
 				if errno == unix.EINTR {
 					continue
 				}
-				return fmt.Errorf("error polling for next packet: %w", errno)
+				if errno == unix.EBADF {
+					return capture.ErrCaptureStopped
+				}
+				return fmt.Errorf("error polling for next packet: %w (errno %d)", errno, errno)
 			}
 
 			// Handle rare cases of runaway packets

@@ -114,9 +114,6 @@ func TestClosedSource(t *testing.T) {
 	require.Nil(t, pkt)
 	require.ErrorIs(t, err, capture.ErrCaptureStopped)
 
-	// Free resources
-	require.Nil(t, mockSrc.Free())
-
 	// Attempt to read from the source
 	pkt, err = mockSrc.NextPacket(nil)
 	require.Nil(t, pkt)
@@ -132,7 +129,7 @@ func TestClosedSourceNoDrain(t *testing.T) {
 		BufferSize(1024*1024, 5),
 	)
 	require.Nil(t, err)
-	mockSrc.Run(time.Millisecond)
+	errChan := mockSrc.Run(time.Millisecond)
 
 	// Close it right away
 	require.Nil(t, mockSrc.Close())
@@ -141,14 +138,13 @@ func TestClosedSourceNoDrain(t *testing.T) {
 	pkt, err := mockSrc.NextPacket(nil)
 	require.Nil(t, pkt)
 	require.ErrorIs(t, err, capture.ErrCaptureStopped)
-
-	// Free resources
-	require.Nil(t, mockSrc.Free())
+	require.Nil(t, <-errChan)
 
 	// Attempt to read from the source
 	pkt, err = mockSrc.NextPacket(nil)
 	require.Nil(t, pkt)
 	require.ErrorIs(t, err, capture.ErrCaptureStopped)
+	require.Nil(t, <-errChan)
 }
 
 func TestFillRingBuffer(t *testing.T) {
@@ -377,10 +373,6 @@ func TestPipe(t *testing.T) {
 	require.Nil(t, err)
 	require.Equal(t, capture.Stats{PacketsReceived: int(n * n)}, stats)
 	require.Nil(t, mockSrc2.Close())
-
-	// Cleanup resources
-	require.Nil(t, mockSrc2.Free())
-	require.Nil(t, mockSrc.Free())
 }
 
 func BenchmarkCaptureMethods(b *testing.B) {
