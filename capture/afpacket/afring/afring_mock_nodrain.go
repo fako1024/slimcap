@@ -1,6 +1,7 @@
 package afring
 
 import (
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -19,8 +20,8 @@ import (
 type MockSourceNoDrain struct {
 	*MockSource
 
-	closing     atomic.Bool
-	doneClosing chan struct{}
+	closing   atomic.Bool
+	wgRunning sync.WaitGroup
 }
 
 // NewMockSourceNoDrain instantiates a new high-throughput mock ring buffer source, wrapping a regular Source
@@ -31,8 +32,7 @@ func NewMockSourceNoDrain(iface string, options ...Option) (*MockSourceNoDrain, 
 	}
 
 	return &MockSourceNoDrain{
-		MockSource:  mockSrc,
-		doneClosing: make(chan struct{}, 1),
+		MockSource: mockSrc,
 	}, nil
 }
 
@@ -46,6 +46,7 @@ func (m *MockSourceNoDrain) Run(releaseInterval time.Duration) <-chan error {
 	m.MockFd.SetNoRelease(true)
 
 	errChan := make(chan error)
+	m.wgRunning.Add(1)
 	go func(errs chan error) {
 
 		defer close(errs)
@@ -64,7 +65,7 @@ func (m *MockSourceNoDrain) Run(releaseInterval time.Duration) <-chan error {
 
 				// If the mock source is closing return
 				if m.closing.Load() {
-					m.doneClosing <- struct{}{}
+					m.wgRunning.Done()
 					errs <- nil
 					return
 				}
@@ -91,8 +92,10 @@ func (m *MockSourceNoDrain) Close() error {
 
 	m.Done()
 
-	// Ensure that the Run() routine has terminated to avoid a race condition
-	<-m.doneClosing
+	// Ensure that the Run() routine has terminated to avoid a race condition and disable
+	// no-release mode to be able to relay ErrCaptureClosed errors for any future calls
+	m.wgRunning.Wait()
+	m.MockFd.SetNoRelease(false)
 
 	// Close the capture source (but skip the unmap() operation as it would fail
 	// on the conventional ring buffer slice)

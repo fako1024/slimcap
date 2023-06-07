@@ -346,10 +346,7 @@ fetch:
 				s.unblocked = false
 			}
 
-			// If the file descriptor / socket is closed then so is the capture
-			if !s.eventHandler.Fd.IsOpen() {
-				return capture.ErrCaptureStopped
-			}
+			// Run a PPOLL on the file descriptor, fetching a new block into the ring buffer
 			efdHasEvent, errno := s.eventHandler.Poll(unix.POLLIN | unix.POLLERR)
 
 			// If an event was received, ensure that the respective error is returned
