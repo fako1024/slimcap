@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 	"unsafe"
 
 	"github.com/fako1024/slimcap/capture"
@@ -267,11 +266,6 @@ func (s *Source) Close() error {
 
 	if err := s.eventHandler.Fd.Close(); err != nil {
 		return err
-	}
-
-	// Wait until the file descriptor is closed
-	for s.eventHandler.Fd.IsOpen() {
-		time.Sleep(10 * time.Millisecond)
 	}
 
 	return nil
