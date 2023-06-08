@@ -131,7 +131,7 @@ func TestClosedSourceNoDrain(t *testing.T) {
 	require.Nil(t, err)
 
 	// Initial attempt without data should fail
-	err, errChan := mockSrc.Run(time.Millisecond)
+	errChan, err := mockSrc.Run(time.Millisecond)
 	require.ErrorIs(t, err, ErrMockBufferNotPopulated)
 	require.Nil(t, errChan)
 
@@ -147,7 +147,7 @@ func TestClosedSourceNoDrain(t *testing.T) {
 	for mockSrc.CanAddPackets() {
 		require.Nil(t, mockSrc.AddPacket(p))
 	}
-	err, errChan = mockSrc.Run(time.Millisecond)
+	errChan, err = mockSrc.Run(time.Millisecond)
 	require.Nil(t, err)
 
 	// Close it right away

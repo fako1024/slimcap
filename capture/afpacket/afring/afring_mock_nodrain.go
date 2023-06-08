@@ -49,12 +49,12 @@ func NewMockSourceNoDrain(iface string, options ...Option) (*MockSourceNoDrain, 
 // mock buffer without consuming it and with minimal overhead from handling the mock socket / semaphore
 // It is intended to be used in benchmarks using the mock source to minimize measurement noise from the
 // mock implementation itself
-func (m *MockSourceNoDrain) Run(releaseInterval time.Duration) (error, <-chan error) {
+func (m *MockSourceNoDrain) Run(releaseInterval time.Duration) (<-chan error, error) {
 
 	// Sweep through all blocks and check if they have been populated
 	for i := 0; i < m.nBlocks; i++ {
 		if m.getBlockStatus(i) != unix.TP_STATUS_CSUMNOTREADY {
-			return ErrMockBufferNotPopulated, nil
+			return nil, ErrMockBufferNotPopulated
 		}
 	}
 
@@ -92,7 +92,7 @@ func (m *MockSourceNoDrain) Run(releaseInterval time.Duration) (error, <-chan er
 		}
 	}(errChan)
 
-	return nil, errChan
+	return errChan, nil
 }
 
 // Done notifies the mock source that no more mock packets will be added, causing the ring buffer
