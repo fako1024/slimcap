@@ -129,7 +129,26 @@ func TestClosedSourceNoDrain(t *testing.T) {
 		BufferSize(1024*1024, 5),
 	)
 	require.Nil(t, err)
-	errChan := mockSrc.Run(time.Millisecond)
+
+	// Initial attempt without data should fail
+	err, errChan := mockSrc.Run(time.Millisecond)
+	require.ErrorIs(t, err, ErrMockBufferNotPopulated)
+	require.Nil(t, errChan)
+
+	// In no drain mode the ring buffer has to be populated in
+	// order to avoid weird behavior when trying to consume from it
+	p, err := capture.BuildPacket(
+		net.ParseIP("1.2.3.4"),
+		net.ParseIP("5.6.7.8"),
+		5555,
+		80,
+		6, []byte{}, capture.PacketOtherHost, 256)
+	require.Nil(t, err)
+	for mockSrc.CanAddPackets() {
+		require.Nil(t, mockSrc.AddPacket(p))
+	}
+	err, errChan = mockSrc.Run(time.Millisecond)
+	require.Nil(t, err)
 
 	// Close it right away
 	require.Nil(t, mockSrc.Close())

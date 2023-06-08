@@ -1,12 +1,21 @@
 package afring
 
 import (
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/fako1024/slimcap/event"
 	"golang.org/x/sys/unix"
+)
+
+var (
+
+	// ErrMockBufferNotPopulated signifies that the mock ring buffer is being run in no drain
+	// mode although not being fully populated (which will most likely lead to issues when
+	// consuming from it)
+	ErrMockBufferNotPopulated = errors.New("mock ring buffer not fully populated, cannot run in no drain mode")
 )
 
 // MockSourceNoDrain denotes a fully mocked, high-throughput ring buffer source, behaving just like one
@@ -40,7 +49,14 @@ func NewMockSourceNoDrain(iface string, options ...Option) (*MockSourceNoDrain, 
 // mock buffer without consuming it and with minimal overhead from handling the mock socket / semaphore
 // It is intended to be used in benchmarks using the mock source to minimize measurement noise from the
 // mock implementation itself
-func (m *MockSourceNoDrain) Run(releaseInterval time.Duration) <-chan error {
+func (m *MockSourceNoDrain) Run(releaseInterval time.Duration) (error, <-chan error) {
+
+	// Sweep through all blocks and check if they have been populated
+	for i := 0; i < m.nBlocks; i++ {
+		if m.getBlockStatus(i) != unix.TP_STATUS_CSUMNOTREADY {
+			return ErrMockBufferNotPopulated, nil
+		}
+	}
 
 	m.FinalizeBlock(false)
 	m.MockFd.SetNoRelease(true)
@@ -76,7 +92,7 @@ func (m *MockSourceNoDrain) Run(releaseInterval time.Duration) <-chan error {
 		}
 	}(errChan)
 
-	return errChan
+	return nil, errChan
 }
 
 // Done notifies the mock source that no more mock packets will be added, causing the ring buffer
