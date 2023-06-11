@@ -46,9 +46,6 @@ func main() {
 		if err := listener.Close(); err != nil {
 			logger.Fatalf("failed to close listener on `%s`: %s", fileName, err)
 		}
-		if err := listener.Free(); err != nil {
-			logger.Fatalf("failed to free listener resources on `%s`: %s", fileName, err)
-		}
 	}()
 
 	logger.Infof("Reading up to %d packets from `%s` (link type: %d)...", maxPkts, fileName, listener.Link().Type)

@@ -271,20 +271,6 @@ func (s *Source) Close() error {
 	return nil
 }
 
-// Free releases any pending resources from the capture source (must be called after Close())
-func (s *Source) Free() error {
-	if s == nil {
-		return errors.New("cannot call Free() on nil capture source")
-	}
-	if !s.eventHandler.Fd.IsOpen() {
-		return errors.New("cannot call Free() on open capture source, call Close() first")
-	}
-
-	s.buf = nil
-
-	return nil
-}
-
 func (s *Source) nextPacketInto(data capture.Packet) (int, error) {
 
 	if !s.eventHandler.Fd.IsOpen() {

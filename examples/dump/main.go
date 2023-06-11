@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/fako1024/slimcap/capture/afpacket/afring"
 	"github.com/fako1024/slimcap/link"
@@ -75,10 +74,6 @@ func main() {
 
 	if err := listener.Close(); err != nil {
 		logger.Fatalf("failed to close listener on `%s`: %s", devName, err)
-	}
-	time.Sleep(time.Second)
-	if err := listener.Free(); err != nil {
-		logger.Fatalf("failed to free listener resources on `%s`: %s", devName, err)
 	}
 
 	return

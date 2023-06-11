@@ -24,7 +24,7 @@ type MockFileDescriptor struct {
 	lastPoll int64
 
 	buf       chan capture.Packet
-	noRelease bool
+	noRelease atomic.Bool
 }
 
 // NewMock instantiates a new mock file descriptor
@@ -89,7 +89,7 @@ func (m *MockFileDescriptor) GetSocketStatsNoReset() (ss TPacketStats, err error
 // SetNoRelease disables reading from the eventFD after data has been consumed (thereby
 // not releasing the block which has to be handled elsewhere instead)
 func (m *MockFileDescriptor) SetNoRelease(enable bool) *MockFileDescriptor {
-	m.noRelease = enable
+	m.noRelease.Store(enable)
 	return m
 }
 
@@ -100,7 +100,7 @@ func (m *MockFileDescriptor) ReleaseSemaphore() (errno unix.Errno) {
 	atomic.StoreInt64(&m.lastPoll, time.Now().Unix())
 
 	// Skip if noRelease mode is set
-	if m.noRelease {
+	if m.noRelease.Load() {
 		return 0
 	}
 

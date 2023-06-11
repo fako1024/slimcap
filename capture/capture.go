@@ -143,9 +143,6 @@ type Source interface {
 
 	// Close stops / closes the capture source
 	Close() error
-
-	// Free releases any pending resources from the capture source (must be called after Close())
-	Free() error
 }
 
 // SourceZeroCopy denotes a generic packet capture source that supports zero-copy operations

@@ -1,11 +1,21 @@
 package afring
 
 import (
+	"errors"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/fako1024/slimcap/event"
 	"golang.org/x/sys/unix"
+)
+
+var (
+
+	// ErrMockBufferNotPopulated signifies that the mock ring buffer is being run in no drain
+	// mode although not being fully populated (which will most likely lead to issues when
+	// consuming from it)
+	ErrMockBufferNotPopulated = errors.New("mock ring buffer not fully populated, cannot run in no drain mode")
 )
 
 // MockSourceNoDrain denotes a fully mocked, high-throughput ring buffer source, behaving just like one
@@ -19,8 +29,8 @@ import (
 type MockSourceNoDrain struct {
 	*MockSource
 
-	closing     atomic.Bool
-	doneClosing chan struct{}
+	closing   atomic.Bool
+	wgRunning sync.WaitGroup
 }
 
 // NewMockSourceNoDrain instantiates a new high-throughput mock ring buffer source, wrapping a regular Source
@@ -31,8 +41,7 @@ func NewMockSourceNoDrain(iface string, options ...Option) (*MockSourceNoDrain, 
 	}
 
 	return &MockSourceNoDrain{
-		MockSource:  mockSrc,
-		doneClosing: make(chan struct{}, 1),
+		MockSource: mockSrc,
 	}, nil
 }
 
@@ -40,12 +49,20 @@ func NewMockSourceNoDrain(iface string, options ...Option) (*MockSourceNoDrain, 
 // mock buffer without consuming it and with minimal overhead from handling the mock socket / semaphore
 // It is intended to be used in benchmarks using the mock source to minimize measurement noise from the
 // mock implementation itself
-func (m *MockSourceNoDrain) Run(releaseInterval time.Duration) <-chan error {
+func (m *MockSourceNoDrain) Run(releaseInterval time.Duration) (<-chan error, error) {
+
+	// Sweep through all blocks and check if they have been populated
+	for i := 0; i < m.nBlocks; i++ {
+		if m.getBlockStatus(i) != unix.TP_STATUS_CSUMNOTREADY {
+			return nil, ErrMockBufferNotPopulated
+		}
+	}
 
 	m.FinalizeBlock(false)
 	m.MockFd.SetNoRelease(true)
 
 	errChan := make(chan error)
+	m.wgRunning.Add(1)
 	go func(errs chan error) {
 
 		defer close(errs)
@@ -62,9 +79,9 @@ func (m *MockSourceNoDrain) Run(releaseInterval time.Duration) <-chan error {
 		for {
 			for i := 0; i < m.nBlocks; i++ {
 
-				// If the mocks source is closing retun
+				// If the mock source is closing return
 				if m.closing.Load() {
-					m.doneClosing <- struct{}{}
+					m.wgRunning.Done()
 					errs <- nil
 					return
 				}
@@ -75,7 +92,7 @@ func (m *MockSourceNoDrain) Run(releaseInterval time.Duration) <-chan error {
 		}
 	}(errChan)
 
-	return errChan
+	return errChan, nil
 }
 
 // Done notifies the mock source that no more mock packets will be added, causing the ring buffer
@@ -91,8 +108,12 @@ func (m *MockSourceNoDrain) Close() error {
 
 	m.Done()
 
-	// Ensure that the Run() routine has terminated to avoid a race condition
-	<-m.doneClosing
+	// Ensure that the Run() routine has terminated to avoid a race condition and disable
+	// no-release mode to be able to relay ErrCaptureClosed errors for any future calls
+	m.wgRunning.Wait()
+	m.MockFd.SetNoRelease(false)
 
-	return m.Source.Close()
+	// Close the capture source (but skip the unmap() operation as it would fail
+	// on the conventional ring buffer slice)
+	return m.Source.close()
 }
