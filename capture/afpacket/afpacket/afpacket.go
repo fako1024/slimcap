@@ -52,7 +52,7 @@ func NewSource(iface string, options ...Option) (*Source, error) {
 func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 
 	// Fail if link is not up
-	if !link.IsUp() {
+	if isUp, err := link.IsUp(); err != nil || !isUp {
 		return nil, fmt.Errorf("link %s is not up", link.Name)
 	}
 
@@ -60,7 +60,7 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 	src := &Source{
 		eventHandler:  new(event.Handler),
 		snapLen:       DefaultSnapLen,
-		ipLayerOffset: link.Type.IpHeaderOffset(),
+		ipLayerOffset: link.Type.IPHeaderOffset(),
 		link:          link,
 		Mutex:         sync.Mutex{},
 	}

@@ -98,7 +98,7 @@ func (c *Capture) Run() (err error) {
 		return err
 	}
 	for _, iface := range links {
-		logger.Infof("Found interface `%s` (idx %d), link type %d, HWAddr `%s`, flags `%s`", iface.Name, iface.Index, iface.Type, iface.HardwareAddr, iface.Flags)
+		logger.Infof("Found interface `%s` (idx %d), link type %d", iface.Name, iface.Index, iface.Type)
 	}
 
 	// construct list of skipped interfaces
@@ -168,7 +168,7 @@ func (c *Capture) Run() (err error) {
 				}
 			}
 
-			if !l.IsUp() {
+			if isUp, err := l.IsUp(); err != nil || !isUp {
 				logger.Warnf("skipping listener on non-up interface `%s`", l.Name)
 				return
 			}

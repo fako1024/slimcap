@@ -5,7 +5,6 @@ import (
 	"embed"
 	"io"
 	"io/fs"
-	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -71,10 +70,9 @@ func TestReader(t *testing.T) {
 		require.Nil(t, err)
 
 		require.Equal(t, &link.Link{
-			Type: link.TypeEthernet,
-			Interface: &net.Interface{
-				Name:  "pcap",
-				Flags: net.FlagUp,
+			Interface: link.Interface{
+				Name: "pcap",
+				Type: link.TypeEthernet,
 			},
 		}, src.Link())
 
@@ -99,7 +97,7 @@ func TestReader(t *testing.T) {
 			require.Nil(t, payload)
 			require.Zero(t, totalLen)
 			require.Equal(t, capture.PacketUnknown, pktType)
-			require.Equal(t, src.Link().Type.IpHeaderOffset(), ipLayerOffset)
+			require.Equal(t, src.Link().Type.IPHeaderOffset(), ipLayerOffset)
 			return nil
 		})
 		require.ErrorIs(t, err, io.EOF)
@@ -232,7 +230,7 @@ func TestCaptureMethods(t *testing.T) {
 	t.Run("NextPacketFn", func(t *testing.T) {
 		testCaptureMethods(t, func(t *testing.T, src *Source) {
 			err := src.NextPacketFn(func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte) error {
-				require.Equal(t, src.link.Type.IpHeaderOffset(), ipLayerOffset)
+				require.Equal(t, src.link.Type.IPHeaderOffset(), ipLayerOffset)
 				require.NotNil(t, payload)
 				require.Equal(t, capture.PacketUnknown, pktType)
 				require.NotZero(t, totalLen)

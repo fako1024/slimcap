@@ -3,8 +3,6 @@ package afpacket
 import (
 	"errors"
 	"io"
-	"net"
-	"sync"
 	"time"
 
 	"github.com/fako1024/slimcap/capture"
@@ -77,19 +75,9 @@ func NewMockSource(iface string, options ...Option) (*MockSource, error) {
 
 	src := &Source{
 		snapLen:       DefaultSnapLen,
-		ipLayerOffset: link.TypeEthernet.IpHeaderOffset(),
-		link: &link.Link{
-			Type: link.TypeEthernet,
-			Interface: &net.Interface{
-				Index:        1,
-				MTU:          1500,
-				Name:         iface,
-				HardwareAddr: []byte{},
-				Flags:        net.FlagUp,
-			},
-		},
-		Mutex:        sync.Mutex{},
-		eventHandler: mockHandler,
+		ipLayerOffset: link.TypeEthernet.IPHeaderOffset(),
+		link:          &link.EmptyEthernetLink,
+		eventHandler:  mockHandler,
 	}
 
 	for _, opt := range options {

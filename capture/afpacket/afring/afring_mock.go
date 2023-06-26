@@ -3,8 +3,6 @@ package afring
 import (
 	"errors"
 	"io"
-	"net"
-	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -54,18 +52,8 @@ func NewMockSource(iface string, options ...Option) (*MockSource, error) {
 		blockSize: tPacketDefaultBlockSize,
 		nBlocks:   tPacketDefaultBlockNr,
 
-		ipLayerOffset: link.TypeEthernet.IpHeaderOffset(),
-		link: &link.Link{
-			Type: link.TypeEthernet,
-			Interface: &net.Interface{
-				Index:        1,
-				MTU:          1500,
-				Name:         iface,
-				HardwareAddr: []byte{},
-				Flags:        net.FlagUp,
-			},
-		},
-		Mutex: sync.Mutex{},
+		ipLayerOffset: link.TypeEthernet.IPHeaderOffset(),
+		link:          &link.EmptyEthernetLink,
 		ringBuffer: ringBuffer{
 			curTPacketHeader: new(tPacketHeader),
 		},

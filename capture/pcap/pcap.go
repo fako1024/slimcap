@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
 	"unsafe"
@@ -69,13 +68,12 @@ func NewSource(iface string, r io.Reader) (*Source, error) {
 
 	// Populate (fake) link information
 	obj.link = &link.Link{
-		Type: link.Type(obj.header.Network),
-		Interface: &net.Interface{
-			Name:  iface,
-			Flags: net.FlagUp,
+		Interface: link.Interface{
+			Name: iface,
+			Type: link.Type(obj.header.Network),
 		},
 	}
-	obj.ipLayerOffset = obj.link.Type.IpHeaderOffset()
+	obj.ipLayerOffset = obj.link.Type.IPHeaderOffset()
 
 	return &obj, nil
 }
