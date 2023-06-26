@@ -4,7 +4,9 @@
 package link
 
 import (
+	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -18,6 +20,9 @@ const (
 	netTypePath  = "/type"
 	netFlagsPath = "/flags"
 )
+
+// ErrIndexOutOfBounds denotes the (unlikely) case of an invalid index being outside the range of an int
+var ErrIndexOutOfBounds = errors.New("interface index out of bounds")
 
 // Interfaces returns all host interfaces
 func Interfaces() ([]Interface, error) {
@@ -74,7 +79,12 @@ func getIndex(name string) (int, error) {
 		return -1, err
 	}
 
-	return int(index), nil
+	// Validate integer upper / lower bounds
+	if index > 0 && index <= math.MaxInt {
+		return int(index), nil
+	}
+
+	return -1, ErrIndexOutOfBounds
 }
 
 func getLinkType(name string) (Type, error) {
