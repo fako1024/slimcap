@@ -2,8 +2,6 @@ package link
 
 import (
 	"io/fs"
-	"net"
-	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,14 +10,18 @@ import (
 )
 
 func TestIsUp(t *testing.T) {
-	link, _ := New("lo")
+	link, err := New("lo")
+	require.Nil(t, err)
 
-	want := true
-	got := link.IsUp()
+	isUp, err := link.IsUp()
+	require.Nil(t, err)
+	require.True(t, isUp)
+}
 
-	if got != want {
-		t.Errorf("IsUp() returned wrong value: got %v, want %v", got, want)
-	}
+func TestNotExist(t *testing.T) {
+	link, err := New("thisinterfacedoesnotexist")
+	require.ErrorIs(t, err, ErrNotExist)
+	require.Nil(t, link)
 }
 
 func TestFindAllLinks(t *testing.T) {
@@ -37,16 +39,10 @@ func TestFindAllLinks(t *testing.T) {
 }
 
 func TestGetLinkType(t *testing.T) {
-	want := TypeLoopback
-	got, err := getLinkType("lo")
+	link, err := New("lo")
+	require.Nil(t, err)
 
-	if err != nil {
-		t.Errorf("getLinkType() returned error: %v", err)
-	}
-
-	if got != want {
-		t.Errorf("getLinkType() returned wrong value: got %v, want %v", got, want)
-	}
+	require.Equal(t, TypeLoopback, link.Type)
 }
 
 func TestIpHeaderOffset(t *testing.T) {
@@ -64,7 +60,7 @@ func TestIpHeaderOffset(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.linkType.IpHeaderOffset(); got != tt.want {
+			if got := tt.linkType.IPHeaderOffset(); got != tt.want {
 				t.Errorf("IpHeaderOffset() = %v, want %v for link type %v", got, tt.want, tt.linkType)
 			}
 		})
@@ -128,7 +124,7 @@ func TestLink_IpHeaderOffset(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.l.IpHeaderOffset(); got != tt.want {
+			if got := tt.l.IPHeaderOffset(); got != tt.want {
 				t.Errorf("Link.IpHeaderOffset() = %v, want %v", got, tt.want)
 			}
 		})
@@ -189,23 +185,23 @@ func TestLink_BPFFilter(t *testing.T) {
 func TestLink_FindAllLinks(t *testing.T) {
 	tests := []struct {
 		name    string
-		mockFn  func() ([]net.Interface, error)
+		mockFn  func() ([]Interface, error)
 		wantErr error
 	}{
 		{
 			name: "Test Find All Links Success",
-			mockFn: func() ([]net.Interface, error) {
-				return []net.Interface{
-					{Name: "eth0", Flags: syscall.IFF_UP},
-					{Name: "eth1", Flags: syscall.IFF_UP},
-					{Name: "lo", Flags: syscall.IFF_UP},
+			mockFn: func() ([]Interface, error) {
+				return []Interface{
+					{Name: "eth0", Index: 1},
+					{Name: "eth1", Index: 2},
+					{Name: "lo", Index: 0},
 				}, nil
 			},
 			wantErr: nil,
 		},
 		{
 			name: "Test Find All Links Error",
-			mockFn: func() ([]net.Interface, error) {
+			mockFn: func() ([]Interface, error) {
 				return nil, fs.ErrNotExist
 			},
 			wantErr: &fs.PathError{
@@ -287,63 +283,17 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func TestLink_IsUp(t *testing.T) {
-	type fields struct {
-		Type Type
-		net.Interface
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		want   bool
-	}{
-		{
-			name: "Test Up Interface",
-			fields: fields{
-				Type: TypeEthernet,
-				Interface: net.Interface{
-					Name:  "eth0",
-					Flags: syscall.IFF_UP,
-				},
-			},
-			want: true,
-		},
-		{
-			name: "Test Down Interface",
-			fields: fields{
-				Type: TypeEthernet,
-				Interface: net.Interface{
-					Name:  "eth0",
-					Flags: 0,
-				},
-			},
-			want: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			l := &Link{
-				Type:      tt.fields.Type,
-				Interface: &tt.fields.Interface,
-			}
-			if got := l.IsUp(); got != tt.want {
-				t.Errorf("Link.IsUp() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 type mockInterfaces struct {
-	mockFn func() ([]net.Interface, error)
+	mockFn func() ([]Interface, error)
 }
 
 var netInterfaces = &mockInterfaces{
-	mockFn: func() ([]net.Interface, error) {
+	mockFn: func() ([]Interface, error) {
 		return nil, nil
 	},
 }
 
-func (m *mockInterfaces) Interfaces() ([]net.Interface, error) {
+func (m *mockInterfaces) Interfaces() ([]Interface, error) {
 	return m.mockFn()
 }
 
