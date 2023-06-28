@@ -2,6 +2,7 @@ package link
 
 import (
 	"io/fs"
+	"net"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -281,6 +282,25 @@ func TestNew(t *testing.T) {
 			}
 		})
 	}
+}
+
+func BenchmarkNewLink(b *testing.B) {
+	b.Run("slimcap", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			iface, _ := NewInterface("lo")
+			_ = iface
+		}
+	})
+	b.Run("net.Interface", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			iface, _ := net.InterfaceByName("lo")
+			_ = iface
+		}
+	})
 }
 
 type mockInterfaces struct {
