@@ -4,11 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net"
-	"os"
-	"strconv"
-	"strings"
-	"syscall"
 
 	"golang.org/x/net/bpf"
 )
@@ -21,6 +16,22 @@ const (
 	// LayerOffsetPPPOE denotes the additional offset for PPPOE (session) packets
 	LayerOffsetPPPOE = 8
 )
+
+var (
+
+	// ErrNotExist denotes that the interface in question does not exist
+	ErrNotExist = errors.New("interface does not exist or is unsupported")
+
+	// ErrNotUp denotes that the interface in question is not up
+	ErrNotUp = errors.New("interface is currently not up")
+)
+
+// EmptyEthernetLink provides a quick access to a plain / empty ethernet-type link
+var EmptyEthernetLink = Link{
+	Interface: Interface{
+		Type: TypeEthernet,
+	},
+}
 
 // Type denotes the linux interface type
 type Type int
@@ -49,7 +60,7 @@ const (
 
 // IpHeaderOffset returns the link / interface specific payload offset for the IP header
 // c.f. https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/include/uapi/linux/if_arp.h
-func (l Type) IpHeaderOffset() byte {
+func (l Type) IPHeaderOffset() byte {
 	switch l {
 	case TypeEthernet,
 		TypeLoopback:
@@ -61,7 +72,7 @@ func (l Type) IpHeaderOffset() byte {
 	}
 
 	// Panic if unknown
-	panic(fmt.Sprintf("Link Type %d not supported (yet)", l))
+	panic(fmt.Sprintf("LinkType %d not supported (yet)", l))
 }
 
 // BPFFilter returns the link / interface specific raw BPF instructions to filter for valid packets only
@@ -77,96 +88,68 @@ func (l Type) BPFFilter() func(snapLen int) []bpf.RawInstruction {
 	}
 
 	// Panic if unknown
-	panic(fmt.Sprintf("Link Type %d not supported (yet)", l))
+	panic(fmt.Sprintf("LinkType %d not supported (yet)", l))
 }
 
 // Link denotes a link, i.e. an interface (wrapped) and its link type
 type Link struct {
-	Type Type
-
-	*net.Interface
+	Interface
 }
 
 // New instantiates a new link / interface
 func New(ifName string) (link *Link, err error) {
 
-	iface, ierr := net.InterfaceByName(ifName)
-	if ierr != nil {
-		err = ierr
-		return
-	}
-
-	if (iface.Flags & syscall.IFF_UP) == 0 {
-		err = fmt.Errorf("interface `%s` is not up", ifName)
-		return
-	}
-
-	linkType, lerr := getLinkType(ifName)
+	iface, lerr := NewInterface(ifName)
 	if lerr != nil {
 		if errors.Is(lerr, fs.ErrNotExist) {
-			err = fmt.Errorf("interface `%s` does not exist or is unsupported", ifName)
+			err = ErrNotExist
 		} else {
 			err = lerr
 		}
 		return
 	}
 
+	isUp, uerr := iface.IsUp()
+	if uerr != nil {
+		if errors.Is(uerr, fs.ErrNotExist) {
+			err = ErrNotExist
+		} else {
+			err = uerr
+		}
+		return
+	}
+
+	if !isUp {
+		err = ErrNotUp
+		return
+	}
+
 	return &Link{
-		Type:      linkType,
 		Interface: iface,
 	}, nil
 }
 
 // IsUp returns if a link / interface is up
-func (l *Link) IsUp() bool {
-	return !(l.Flags&syscall.IFF_UP == 0)
+func (l *Link) IsUp() (bool, error) {
+	return l.Interface.IsUp()
 }
 
 // FindAllLinks retrieves all system network interfaces and their link type
 func FindAllLinks() ([]*Link, error) {
 
 	// Retrieve all network interfaces
-	ifaces, err := net.Interfaces()
+	ifaces, err := Interfaces()
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve system network interfaces: %w", err)
 	}
 
 	// Determine link type for all interfaces
 	var links []*Link
-	for i := 0; i < len(ifaces); i++ {
-
-		linkType, err := getLinkType(ifaces[i].Name)
-		if err != nil {
-			return nil, fmt.Errorf("failed to determine link type for interface `%s`: %w", ifaces[i].Name, err)
-		}
-
+	for _, iface := range ifaces {
 		links = append(links, &Link{
-			Interface: &ifaces[i],
-			Type:      linkType,
+			Interface: iface,
 		})
 	}
 
 	return links, err
-}
-
-///////////////////////////
-
-func getLinkType(ifName string) (Type, error) {
-
-	sysPath := fmt.Sprintf("/sys/class/net/%s/type", ifName)
-	data, err := os.ReadFile(sysPath)
-	if err != nil {
-		return -1, err
-	}
-
-	val, err := strconv.Atoi(strings.ReplaceAll(string(data), "\n", ""))
-	if err != nil {
-		return -1, err
-	}
-
-	if val < 0 || val > 65535 {
-		return -1, fmt.Errorf("invalid link type read from `%s`: %d", sysPath, val)
-	}
-
-	return Type(val), nil
 }

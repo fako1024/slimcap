@@ -148,7 +148,7 @@ func TestCaptureMethods(t *testing.T) {
 	t.Run("NextPacketFn", func(t *testing.T) {
 		testCaptureMethods(t, func(t *testing.T, src *MockSource, i, j uint16) {
 			err := src.NextPacketFn(func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte) error {
-				require.Equal(t, src.link.Type.IpHeaderOffset(), ipLayerOffset)
+				require.Equal(t, src.link.Type.IPHeaderOffset(), ipLayerOffset)
 				require.Equal(t, uint32(i+j), totalLen)
 				require.Equal(t, byte(i+j)%5, pktType)
 				require.Equal(t, fmt.Sprintf("1.2.3.%d:%d => 4.5.6.%d:%d (proto: %d)", i%254+1, i, j%254+1, j, 6), capture.IPLayer(payload[ipLayerOffset:]).String())
