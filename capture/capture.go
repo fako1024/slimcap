@@ -26,9 +26,9 @@ var (
 
 // Stats denotes a packet capture stats structure providing basic counters
 type Stats struct {
-	PacketsReceived int
-	PacketsDropped  int
-	QueueFreezes    int
+	PacketsReceived uint64
+	PacketsDropped  uint64
+	QueueFreezes    uint64
 }
 
 // PacketType denotes the packet type (indicating traffic direction)

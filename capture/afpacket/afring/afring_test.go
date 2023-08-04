@@ -361,7 +361,7 @@ func TestPipe(t *testing.T) {
 		require.Nil(t, <-errChan)
 		stats, err := mockSrc.Stats()
 		require.Nil(t, err)
-		require.Equal(t, capture.Stats{PacketsReceived: int(n * n)}, stats)
+		require.Equal(t, capture.Stats{PacketsReceived: uint64(n * n)}, stats)
 		require.Nil(t, mockSrc.Close())
 	}()
 
@@ -390,7 +390,7 @@ func TestPipe(t *testing.T) {
 	require.Nil(t, <-errChan2)
 	stats, err := mockSrc2.Stats()
 	require.Nil(t, err)
-	require.Equal(t, capture.Stats{PacketsReceived: int(n * n)}, stats)
+	require.Equal(t, capture.Stats{PacketsReceived: uint64(n * n)}, stats)
 	require.Nil(t, mockSrc2.Close())
 }
 
@@ -561,7 +561,7 @@ func testCaptureMethods(t *testing.T, fn func(t *testing.T, _ *MockSource, _, _ 
 	// Evaluate packet statistics
 	stats, err := mockSrc.Stats()
 	require.Nil(t, err)
-	require.Equal(t, capture.Stats{PacketsReceived: int(n * n)}, stats)
+	require.Equal(t, capture.Stats{PacketsReceived: uint64(n * n)}, stats)
 
 	// Close the mock source
 	require.Nil(t, mockSrc.Close())
