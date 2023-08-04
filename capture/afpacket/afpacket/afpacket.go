@@ -234,8 +234,8 @@ func (s *Source) Stats() (capture.Stats, error) {
 		return capture.Stats{}, err
 	}
 	return capture.Stats{
-		PacketsReceived: int(ss.Packets),
-		PacketsDropped:  int(ss.Drops),
+		PacketsReceived: uint64(ss.Packets),
+		PacketsDropped:  uint64(ss.Drops),
 	}, nil
 }
 

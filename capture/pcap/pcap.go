@@ -25,7 +25,7 @@ type Source struct {
 
 	link *link.Link
 
-	nPackets      int
+	nPackets      uint64
 	swapEndianess bool
 
 	packetAddCallbackFn func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte)
