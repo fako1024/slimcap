@@ -398,8 +398,6 @@ func (s *Source) determineTotalPktLen(payload []byte) (uint16, error) {
 		return toUint16(payload[s.ipLayerOffset+4 : s.ipLayerOffset+6]), nil
 	}
 
-	// TODO: What about jumbo packets? At least for IPv6 such packets carry additional
-	// data in other places of the payload
 	return 0, fmt.Errorf("cannot determine total packet length")
 }
 

@@ -304,11 +304,8 @@ func (s *Source) close() error {
 	if err := s.eventHandler.Efd.Signal(event.SignalStop); err != nil {
 		return err
 	}
-	if err := s.eventHandler.Fd.Close(); err != nil {
-		return err
-	}
 
-	return nil
+	return s.eventHandler.Fd.Close()
 }
 
 func (s *Source) closeAndUnmap() error {
@@ -358,7 +355,7 @@ fetch:
 				if errno == unix.EBADF {
 					return capture.ErrCaptureStopped
 				}
-				return fmt.Errorf("error polling for next packet: %w (errno %d)", errno, errno)
+				return fmt.Errorf("error polling for next packet: %w (errno %d)", errno, int(errno))
 			}
 
 			// Handle rare cases of runaway packets
@@ -383,9 +380,6 @@ fetch:
 		// If there is no next offset, release the TPacketHeader to the kernel and fetch a new one
 		nextPos := s.curTPacketHeader.nextOffset()
 		if s.curTPacketHeader.nPktsLeft == 0 {
-			if nextPos != 0 {
-				fmt.Println(s.link.Name, "WUT (after resetting)?", s.curTPacketHeader.nPktsLeft, nextPos)
-			}
 			s.curTPacketHeader.setStatus(unix.TP_STATUS_KERNEL)
 			s.offset = (s.offset + 1) % int(s.tpReq.blockNr)
 			s.curTPacketHeader.data = nil
@@ -393,19 +387,7 @@ fetch:
 		}
 
 		// Update position of next packet
-		if nextPos > 9000 {
-			fmt.Println(s.link.Name, "unexpectedly large next pos, will probably fail horribly", nextPos)
-		}
 		s.curTPacketHeader.ppos += nextPos
-	}
-
-	if s.curTPacketHeader.ppos > s.tpReq.blockSize {
-		fmt.Println(s.link.Name, "exceeding block size")
-	}
-
-	if s.curTPacketHeader.pktLen() == 0 {
-		fmt.Println(s.link.Name, "skipping empty TPacketHeader, please check if anything weird is happening in your application !!! Info:", s.curTPacketHeader.ppos, "/", s.tpReq.blockSize, *(*uint16)(unsafe.Pointer(&s.curTPacketHeader.data[s.curTPacketHeader.ppos+24])), s.curTPacketHeader.packetType(), s.curTPacketHeader.nextOffset())
-		goto fetch
 	}
 
 	s.curTPacketHeader.nPktsLeft--
