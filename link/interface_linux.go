@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -50,7 +49,7 @@ func Interfaces() ([]Interface, error) {
 // IsUp determines if an interface is currently up (at the time of the call)
 func (i Interface) IsUp() (bool, error) {
 
-	data, err := os.ReadFile(filepath.Clean(netBasePath + i.Name + netFlagsPath))
+	data, err := os.ReadFile(netBasePath + i.Name + netFlagsPath)
 	if err != nil {
 		return false, err
 	}
@@ -66,9 +65,9 @@ func (i Interface) IsUp() (bool, error) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-func getIndex(name string) (int, error) {
+func (i Interface) getIndex() (int, error) {
 
-	data, err := os.ReadFile(filepath.Clean(netBasePath + name + netIndexPath))
+	data, err := os.ReadFile(netBasePath + i.Name + netIndexPath)
 	if err != nil {
 		return -1, err
 	}
@@ -87,10 +86,9 @@ func getIndex(name string) (int, error) {
 	return -1, ErrIndexOutOfBounds
 }
 
-func getLinkType(name string) (Type, error) {
+func (i Interface) getLinkType() (Type, error) {
 
-	sysPath := netBasePath + name + netTypePath
-	data, err := os.ReadFile(filepath.Clean(sysPath))
+	data, err := os.ReadFile(netBasePath + i.Name + netTypePath)
 	if err != nil {
 		return -1, err
 	}
@@ -102,7 +100,7 @@ func getLinkType(name string) (Type, error) {
 	}
 
 	if val < 0 || val > 65535 {
-		return -1, fmt.Errorf("invalid link type read from `%s`: %d", sysPath, val)
+		return -1, fmt.Errorf("invalid link type read from `%s`: %d", netBasePath+i.Name+netTypePath, val)
 	}
 
 	return Type(val), nil
