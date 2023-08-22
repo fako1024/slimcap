@@ -1,5 +1,7 @@
 package link
 
+import "path/filepath"
+
 // Interface is the low-level representation of a network interface
 type Interface struct {
 	Name  string
@@ -10,13 +12,13 @@ type Interface struct {
 // NewInterface instantiates a new network interface and obtains its basic parameters
 func NewInterface(name string) (iface Interface, err error) {
 	iface = Interface{
-		Name: name,
+		Name: filepath.Clean(name),
 	}
 
-	if iface.Index, err = getIndex(name); err != nil {
+	if iface.Index, err = iface.getIndex(); err != nil {
 		return
 	}
-	if iface.Type, err = getLinkType(name); err != nil {
+	if iface.Type, err = iface.getLinkType(); err != nil {
 		return
 	}
 
