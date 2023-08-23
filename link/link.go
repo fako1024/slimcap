@@ -50,15 +50,21 @@ const (
 	// TypePPP denotes a link of type ARPHRD_PPP
 	TypePPP Type = 512
 
+	// TypeIP6IP6 denotes a link of type ARPHRD_TUNNEL6
+	TypeIP6IP6 Type = 769
+
 	// TypeGRE denotes a link of type ARPHRD_IPGRE
 	TypeGRE Type = 778
+
+	// TypeGRE6 denotes a link of type ARPHRD_IP6GRE
+	TypeGRE6 Type = 823
 
 	// TypeNone denotes a link of type ARPHRD_NONE:
 	// Tunnel / anything else (confirmed: Wireguard, OpenVPN)
 	TypeNone Type = 65534
 )
 
-// IpHeaderOffset returns the link / interface specific payload offset for the IP header
+// IPHeaderOffset returns the link / interface specific payload offset for the IP header
 // c.f. https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/include/uapi/linux/if_arp.h
 func (l Type) IPHeaderOffset() byte {
 	switch l {
@@ -66,13 +72,15 @@ func (l Type) IPHeaderOffset() byte {
 		TypeLoopback:
 		return IPLayerOffsetEthernet
 	case TypePPP,
+		TypeIP6IP6,
 		TypeGRE,
+		TypeGRE6,
 		TypeNone:
 		return 0
 	}
 
 	// Panic if unknown
-	panic(fmt.Sprintf("LinkType %d not supported (yet)", l))
+	panic(fmt.Sprintf("LinkType %d not supported by slimcap (yet), please open a GitHub issue", l))
 }
 
 // BPFFilter returns the link / interface specific raw BPF instructions to filter for valid packets only
@@ -82,13 +90,15 @@ func (l Type) BPFFilter() func(snapLen int) []bpf.RawInstruction {
 		TypeLoopback:
 		return bpfInstructionsLinkTypeEther
 	case TypePPP,
+		TypeIP6IP6,
 		TypeGRE,
+		TypeGRE6,
 		TypeNone:
 		return bpfInstructionsLinkTypeRaw
 	}
 
 	// Panic if unknown
-	panic(fmt.Sprintf("LinkType %d not supported (yet)", l))
+	panic(fmt.Sprintf("LinkType %d not supported by slimcap (yet), please open a GitHub issue", l))
 }
 
 // Link denotes a link, i.e. an interface (wrapped) and its link type
