@@ -62,7 +62,6 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 		snapLen:       DefaultSnapLen,
 		ipLayerOffset: link.Type.IPHeaderOffset(),
 		link:          link,
-		Mutex:         sync.Mutex{},
 	}
 
 	// Apply functional options, if any
@@ -226,10 +225,11 @@ retry:
 
 // Stats returns (and clears) the packet counters of the underlying source
 func (s *Source) Stats() (capture.Stats, error) {
-	s.Lock()
-	defer s.Unlock()
 
+	s.Lock()
 	ss, err := s.eventHandler.GetSocketStats()
+	s.Unlock()
+
 	if err != nil {
 		return capture.Stats{}, err
 	}
@@ -264,11 +264,7 @@ func (s *Source) Close() error {
 		return err
 	}
 
-	if err := s.eventHandler.Fd.Close(); err != nil {
-		return err
-	}
-
-	return nil
+	return s.eventHandler.Fd.Close()
 }
 
 func (s *Source) nextPacketInto(data capture.Packet) (int, error) {
@@ -309,7 +305,7 @@ retry:
 	}
 
 	data[1] = s.ipLayerOffset
-	*(*uint32)(unsafe.Pointer(&data[2])) = uint32(totalLen)
+	*(*uint32)(unsafe.Pointer(&data[2])) = uint32(totalLen) // #nosec: G103
 
 	return n, nil
 }

@@ -79,7 +79,6 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 		nBlocks:       tPacketDefaultBlockNr,
 		ipLayerOffset: link.Type.IPHeaderOffset(),
 		link:          link,
-		Mutex:         sync.Mutex{},
 	}
 
 	for _, opt := range options {
@@ -266,10 +265,11 @@ func (s *Source) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType c
 
 // Stats returns (and clears) the packet counters of the underlying source
 func (s *Source) Stats() (capture.Stats, error) {
-	s.Lock()
-	defer s.Unlock()
 
+	s.Lock()
 	ss, err := s.eventHandler.GetSocketStats()
+	s.Unlock()
+
 	if err != nil {
 		return capture.Stats{}, err
 	}

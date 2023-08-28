@@ -1,3 +1,6 @@
+//go:build linux && !slimcap_nomock
+// +build linux,!slimcap_nomock
+
 package socket
 
 import (
