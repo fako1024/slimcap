@@ -176,7 +176,7 @@ func (m *MockSource) CanAddPackets() bool {
 // Pipe continuously pipes packets from the provided source through this one, mimicking
 // the ring buffer / TPacketHeader block retirement setting for population of the ring buffer
 func (m *MockSource) Pipe(src capture.Source, doneReadingChan chan struct{}) (errChan chan error) {
-	errChan = make(chan error)
+	errChan = make(chan error, 1)
 
 	go func(errs chan error, done chan struct{}) {
 		for {
@@ -220,9 +220,13 @@ func (m *MockSource) Done() {
 // ForceBlockRelease releases all blocks to the kernel (in order to "unblock" any potential mock capture
 // from the consuming routine without having to attempt a failed packet consumption)
 func (m *MockSource) ForceBlockRelease() {
-	for i := 0; i < m.nBlocks; i++ {
-		m.markBlock(i, unix.TP_STATUS_KERNEL)
-	}
+	m.markAllBlocks(unix.TP_STATUS_KERNEL)
+}
+
+// ForceBlockskUnavailable marks all blocks to be unavailable (in order to prevent any access to blocks
+// potentially unconsumed at / after a point in time where this method is called)
+func (m *MockSource) ForceBlockskUnavailable() {
+	m.markAllBlocks(unix.TP_STATUS_CSUMNOTREADY)
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -256,6 +260,12 @@ func (m *MockSource) getBlockStatus(n int) (status uint32) {
 
 func (m *MockSource) markBlock(n int, status uint32) {
 	atomic.StoreUint32((*uint32)(unsafe.Pointer(&m.ringBuffer.ring[n*m.blockSize+8])), status)
+}
+
+func (m *MockSource) markAllBlocks(status uint32) {
+	for i := 0; i < m.nBlocks; i++ {
+		m.markBlock(i, status)
+	}
 }
 
 func (m *MockSource) hasUserlandBlock() bool {
