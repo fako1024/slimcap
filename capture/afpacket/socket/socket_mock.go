@@ -1,5 +1,5 @@
-//go:build linux
-// +build linux
+//go:build linux && !slimcap_nomock
+// +build linux,!slimcap_nomock
 
 package socket
 
@@ -118,14 +118,17 @@ func (m *MockFileDescriptor) ReleaseSemaphore() (errno unix.Errno) {
 	return
 }
 
+// Put sends a single packets via the (buffered) mock file descriptor
 func (m *MockFileDescriptor) Put(pkt capture.Packet) {
 	m.buf <- pkt
 }
 
+// Get fetches a single packets from the (buffered) mock file descriptor
 func (m *MockFileDescriptor) Get() capture.Packet {
 	return <-m.buf
 }
 
+// HasPackets returns if there are currently any packets in the mock buffer
 func (m *MockFileDescriptor) HasPackets() bool {
 	return len(m.buf) > 0
 }
@@ -133,6 +136,6 @@ func (m *MockFileDescriptor) HasPackets() bool {
 /////////////////////////////////////////////////////////////////////////////////////////
 
 func read(fd int, p []byte) (int, unix.Errno) {
-	r0, _, e1 := unix.Syscall(unix.SYS_READ, uintptr(fd), uintptr(unsafe.Pointer(&p[0])), uintptr(len(p)))
+	r0, _, e1 := unix.Syscall(unix.SYS_READ, uintptr(fd), uintptr(unsafe.Pointer(&p[0])), uintptr(len(p))) // #nosec:G103
 	return int(r0), e1
 }

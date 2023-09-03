@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	TPacketVersion = unix.TPACKET_V3
+	TPacketVersion = unix.TPACKET_V3 // TPacketVersion : The TPacket header version to use
 )
 
 // FileDescriptor denotes a generic system level file descriptor (an int)
@@ -56,8 +56,8 @@ func (sd FileDescriptor) GetSocketStats() (ss TPacketStats, err error) {
 	}
 
 	// Retrieve TPacket stats for the socket
-	sockLen := unsafe.Sizeof(ss)
-	err = getsockopt(sd, unix.SOL_PACKET, unix.PACKET_STATISTICS, unsafe.Pointer(&ss), uintptr(unsafe.Pointer(&sockLen)))
+	sockLen := unsafe.Sizeof(ss)                                                                                          // #nosec: G103
+	err = getsockopt(sd, unix.SOL_PACKET, unix.PACKET_STATISTICS, unsafe.Pointer(&ss), uintptr(unsafe.Pointer(&sockLen))) // #nosec: G103
 
 	return
 }
@@ -81,7 +81,9 @@ func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, promisc
 			Ifindex: int32(iface.Index),
 			Type:    unix.PACKET_MR_PROMISC,
 		}
+		// #nosec: G103
 		reqLen := unsafe.Sizeof(mReq)
+		// #nosec: G103
 		if err := setsockopt(sd, unix.SOL_SOCKET, unix.PACKET_ADD_MEMBERSHIP, unsafe.Pointer(&mReq), uintptr(unsafe.Pointer(&reqLen))); err != nil {
 			return fmt.Errorf("failed to set promiscuous mode: %w", err)
 		}
@@ -95,7 +97,9 @@ func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, promisc
 		)
 		p.Len = uint16(len(bfpInstructions))
 		if p.Len != 0 {
+			// #nosec: G103
 			p.Filter = (*unix.SockFilter)(unsafe.Pointer(&bfpInstructions[0]))
+			// #nosec: G103
 			if err := setsockopt(sd, unix.SOL_SOCKET, unix.SO_ATTACH_FILTER, unsafe.Pointer(&p), unix.SizeofSockFprog); err != nil {
 				return fmt.Errorf("failed to set BPF filter: %w", err)
 			}

@@ -1,3 +1,6 @@
+//go:build !slimcap_nomock
+// +build !slimcap_nomock
+
 package afpacket
 
 import (
@@ -66,7 +69,7 @@ func (m *MockSource) AddPacketFromSource(src capture.Source) error {
 }
 
 // NewMockSource instantiates a new mock direct AF_PACKET source, wrapping a regular Source
-func NewMockSource(iface string, options ...Option) (*MockSource, error) {
+func NewMockSource(_ string, options ...Option) (*MockSource, error) {
 
 	mockHandler, mockFd, err := event.NewMockHandler()
 	if err != nil {

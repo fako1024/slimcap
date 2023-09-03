@@ -1,3 +1,6 @@
+//go:build !slimcap_nomock
+// +build !slimcap_nomock
+
 package afring
 
 import (
@@ -40,7 +43,7 @@ type MockSource struct {
 }
 
 // NewMockSource instantiates a new mock ring buffer source, wrapping a regular Source
-func NewMockSource(iface string, options ...Option) (*MockSource, error) {
+func NewMockSource(_ string, options ...Option) (*MockSource, error) {
 
 	mockHandler, mockFd, err := event.NewMockHandler()
 	if err != nil {
@@ -119,29 +122,29 @@ func (m *MockSource) addPacket(payload []byte, totalLen uint32, pktType, ipLayer
 
 		m.markBlock(thisBlock, unix.TP_STATUS_CSUMNOTREADY)
 		m.curBlockPos = tPacketHeaderLen
-		*(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[thisBlock*m.blockSize])) = 3                   // version
-		*(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[thisBlock*m.blockSize+12])) = 0                // nPkts
-		*(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[thisBlock*m.blockSize+16])) = tPacketHeaderLen // offsetToFirstPkt
+		*(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[thisBlock*m.blockSize])) = 3                   // #nosec: G103 // version
+		*(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[thisBlock*m.blockSize+12])) = 0                // #nosec: G103 // nPkts
+		*(*uint32)(unsafe.Pointer(&m.ringBuffer.ring[thisBlock*m.blockSize+16])) = tPacketHeaderLen // #nosec: G103 // offsetToFirstPkt
 	}
 
 	block := m.ringBuffer.ring[thisBlock*m.blockSize : thisBlock*m.blockSize+m.blockSize]
 
-	*(*uint32)(unsafe.Pointer(&block[m.curBlockPos+12])) = uint32(m.snapLen) // snapLen
-	*(*uint32)(unsafe.Pointer(&block[m.curBlockPos+16])) = totalLen          // totalLen
-	*(*uint32)(unsafe.Pointer(&block[m.curBlockPos+24])) = uint32(mac)       // mac
+	*(*uint32)(unsafe.Pointer(&block[m.curBlockPos+12])) = uint32(m.snapLen) // #nosec: G103 // snapLen
+	*(*uint32)(unsafe.Pointer(&block[m.curBlockPos+16])) = totalLen          // #nosec: G103 // totalLen
+	*(*uint32)(unsafe.Pointer(&block[m.curBlockPos+24])) = uint32(mac)       // #nosec: G103 // mac
 	block[m.curBlockPos+58] = pktType                                        // pktType
 	copy(block[m.curBlockPos+mac:m.curBlockPos+mac+m.snapLen], payload)      // payload
 
 	// Ensure that there is no "stray" nextOffset set from a previous perusal of this ring buffer block which
 	// might remain in case the block is finalized
-	*(*uint32)(unsafe.Pointer(&block[m.curBlockPos])) = 0
+	*(*uint32)(unsafe.Pointer(&block[m.curBlockPos])) = 0 // #nosec: G103
 
 	// If this is not the first package of the block, set the nextOffset of the previous packet
 	if m.curBlockPos > tPacketHeaderLen {
-		*(*uint32)(unsafe.Pointer(&block[m.curBlockPos-mac-m.snapLen])) = uint32(mac + m.snapLen) // nextOffset
+		*(*uint32)(unsafe.Pointer(&block[m.curBlockPos-mac-m.snapLen])) = uint32(mac + m.snapLen) // #nosec: G103 // nextOffset
 	}
 
-	*(*uint32)(unsafe.Pointer(&block[12])) = *(*uint32)(unsafe.Pointer(&block[12])) + 1 // nPkts
+	*(*uint32)(unsafe.Pointer(&block[12])) = *(*uint32)(unsafe.Pointer(&block[12])) + 1 // #nosec: G103 // nPkts
 	m.curBlockPos += mac + m.snapLen
 
 	// Similar to the actual kernel ring buffer, we count packets as "seen" when they enter
@@ -255,11 +258,11 @@ func (m *MockSource) run(errChan chan<- error) {
 }
 
 func (m *MockSource) getBlockStatus(n int) (status uint32) {
-	return atomic.LoadUint32((*uint32)(unsafe.Pointer(&m.ringBuffer.ring[n*m.blockSize+8])))
+	return atomic.LoadUint32((*uint32)(unsafe.Pointer(&m.ringBuffer.ring[n*m.blockSize+8]))) // #nosec: G103
 }
 
 func (m *MockSource) markBlock(n int, status uint32) {
-	atomic.StoreUint32((*uint32)(unsafe.Pointer(&m.ringBuffer.ring[n*m.blockSize+8])), status)
+	atomic.StoreUint32((*uint32)(unsafe.Pointer(&m.ringBuffer.ring[n*m.blockSize+8])), status) // #nosec: G103
 }
 
 func (m *MockSource) markAllBlocks(status uint32) {

@@ -6,7 +6,6 @@ package afring
 import (
 	"fmt"
 	"math"
-	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -35,9 +34,7 @@ type tPacketRequest struct {
 	frameSize uint32
 	frameNr   uint32
 
-	retireBlkTov   uint32
-	sizeofPriv     uint32
-	featureReqWord uint32
+	retireBlkTov uint32
 }
 
 func newTPacketRequestForBuffer(blockSize, nBlocks, snapLen int) (req tPacketRequest, err error) {
@@ -93,15 +90,6 @@ type tPacketHeader struct {
 	data      []byte
 	ppos      uint32
 	nPktsLeft uint32
-}
-
-// / -> Block Header
-func (t tPacketHeader) getStatus() uint32 {
-	return atomic.LoadUint32((*uint32)(unsafe.Pointer(&t.data[8])))
-}
-
-func (t tPacketHeader) setStatus(status uint32) {
-	atomic.StoreUint32((*uint32)(unsafe.Pointer(&t.data[8])), status)
 }
 
 func (t tPacketHeader) nPkts() uint32 {
