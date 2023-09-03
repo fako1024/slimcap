@@ -61,11 +61,14 @@ func (m *MockSourceNoDrain) Run(releaseInterval time.Duration) (<-chan error, er
 	m.FinalizeBlock(false)
 	m.MockFd.SetNoRelease(true)
 
-	errChan := make(chan error)
+	errChan := make(chan error, 1)
 	m.wgRunning.Add(1)
 	go func(errs chan error) {
 
-		defer close(errs)
+		defer func() {
+			close(errs)
+			m.wgRunning.Done()
+		}()
 
 		// Queue / trigger a single event equivalent to receiving a new block via the PPOLL syscall and
 		// instruct the mock socket to not release the semaphore. That way data can be consumed immediately
@@ -79,10 +82,9 @@ func (m *MockSourceNoDrain) Run(releaseInterval time.Duration) (<-chan error, er
 		for {
 			for i := 0; i < m.nBlocks; i++ {
 
-				// If the mock source is closing return
+				// If the mock source is closing, mark all blocks as unavailable and return
 				if m.closing.Load() {
-					m.wgRunning.Done()
-					errs <- nil
+					m.ForceBlockskUnavailable()
 					return
 				}
 
