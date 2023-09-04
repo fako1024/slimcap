@@ -22,7 +22,6 @@ func Debug(format string, args ...any) {
 
 // Info emits a simple INFO level log message to STDOUT
 func Info(format string, args ...any) {
-	fmt.Println("in info")
 	if len(args) == 0 {
 		_ = logger.Handler().Handle(context.TODO(), slog.NewRecord(time.Now(), slog.LevelInfo, format, 0))
 	} else {
