@@ -360,9 +360,6 @@ fetch:
 
 			// Handle rare cases of runaway packets
 			if s.curTPacketHeader.getStatus()&unix.TP_STATUS_COPY != 0 {
-				if s.curTPacketHeader.nPktsLeft != 0 {
-					fmt.Println(s.link.Name, "WUT (after runaway packet)?", s.curTPacketHeader.nPktsLeft)
-				}
 				s.curTPacketHeader.setStatus(unix.TP_STATUS_KERNEL)
 				s.offset = (s.offset + 1) % int(s.tpReq.blockNr)
 				s.nextTPacketHeader()
@@ -391,6 +388,12 @@ fetch:
 	}
 
 	s.curTPacketHeader.nPktsLeft--
+
+	// Apply filter (if any)
+	if filter := s.link.FilterMask(); filter > 0 && filter&s.curTPacketHeader.packetType() != 0 {
+		goto fetch
+	}
+
 	return nil
 }
 
