@@ -34,7 +34,9 @@ type tPacketRequest struct {
 	frameSize uint32
 	frameNr   uint32
 
-	retireBlkTov uint32
+	retireBlkTov   uint32
+	sizeofPriv     uint32 //nolint:structcheck // (needed for correct sizeof(struct))
+	featureReqWord uint32 //nolint:structcheck // (needed for correct sizeof(struct))
 }
 
 func newTPacketRequestForBuffer(blockSize, nBlocks, snapLen int) (req tPacketRequest, err error) {
@@ -93,28 +95,28 @@ type tPacketHeader struct {
 }
 
 func (t tPacketHeader) nPkts() uint32 {
-	return *(*uint32)(unsafe.Pointer(&t.data[12]))
+	return *(*uint32)(unsafe.Pointer(&t.data[12])) // #nosec G103
 }
 
 func (t tPacketHeader) offsetToFirstPkt() uint32 {
-	return *(*uint32)(unsafe.Pointer(&t.data[16]))
+	return *(*uint32)(unsafe.Pointer(&t.data[16])) // #nosec G103
 }
 
 // 2 * 3 * uint32 for timestamps
 
 // / -> Packet Header
 func (t tPacketHeader) nextOffset() uint32 {
-	return *(*uint32)(unsafe.Pointer(&t.data[t.ppos]))
+	return *(*uint32)(unsafe.Pointer(&t.data[t.ppos])) // #nosec G103
 }
 
 // 2 * uint32 for timestamps
 
 func (t tPacketHeader) snapLen() uint32 {
-	return *(*uint32)(unsafe.Pointer(&t.data[t.ppos+12]))
+	return *(*uint32)(unsafe.Pointer(&t.data[t.ppos+12])) // #nosec G103
 }
 
 func (t tPacketHeader) pktLen() uint32 {
-	return *(*uint32)(unsafe.Pointer(&t.data[t.ppos+16]))
+	return *(*uint32)(unsafe.Pointer(&t.data[t.ppos+16])) // #nosec G103
 }
 
 func (t tPacketHeader) pktLenPut(data []byte) {
@@ -126,12 +128,12 @@ func (t tPacketHeader) packetType() byte {
 }
 
 func (t tPacketHeader) payloadNoCopyAtOffset(offset, to uint32) []byte {
-	pos := t.ppos + uint32(*(*uint16)(unsafe.Pointer(&t.data[t.ppos+24])))
+	pos := t.ppos + uint32(*(*uint16)(unsafe.Pointer(&t.data[t.ppos+24]))) // #nosec G103
 	return t.data[pos+offset : pos+to]
 }
 
 func (t tPacketHeader) payloadCopyPutAtOffset(data []byte, offset, to uint32) {
-	pos := t.ppos + uint32(*(*uint16)(unsafe.Pointer(&t.data[t.ppos+24])))
+	pos := t.ppos + uint32(*(*uint16)(unsafe.Pointer(&t.data[t.ppos+24]))) // #nosec G103
 	copy(data, t.data[pos+offset:pos+to])
 }
 

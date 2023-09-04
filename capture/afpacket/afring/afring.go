@@ -107,13 +107,13 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 	src.ringBuffer.curTPacketHeader = new(tPacketHeader)
 	src.ringBuffer.ring, src.eventHandler.Efd, err = setupRingBuffer(src.eventHandler.Fd, src.tpReq)
 	if err != nil {
-		src.eventHandler.Fd.Close()
-		return nil, fmt.Errorf("failed to setup AF_PACKET mmap'ed ring buffer %s: %w", link.Name, err)
+		_ = src.eventHandler.Fd.Close()
+		return nil, fmt.Errorf("failed to setup AF_PACKET mmap'ed ring buffer on %s: %w", link.Name, err)
 	}
 
 	// Clear socket stats
 	if _, err := src.eventHandler.Fd.GetSocketStats(); err != nil {
-		src.eventHandler.Fd.Close()
+		_ = src.eventHandler.Fd.Close()
 		return nil, fmt.Errorf("failed to clear AF_PACKET socket stats on %s: %w", link.Name, err)
 	}
 
