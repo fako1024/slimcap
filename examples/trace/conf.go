@@ -2,9 +2,11 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"os"
 	"strings"
 
-	"github.com/fako1024/slimcap/examples/log"
+	"github.com/els0r/telemetry/logging"
 )
 
 const (
@@ -57,7 +59,12 @@ func ParseConfig() (cfg Config) {
 	cfg.Ifaces = parseList(rawIfaces)
 	cfg.SkipIfaces = parseList(rawSkipIfaces)
 
-	log.SetLevel(cfg.LogLevel)
+	var logErr error
+	logger, logErr = logging.New(logging.LevelFromString(cfg.LogLevel), logging.EncodingPlain)
+	if logErr != nil {
+		fmt.Fprintf(os.Stderr, "failed to instantiate CLI logger: %v\n", logErr)
+		os.Exit(1)
+	}
 
 	return
 }

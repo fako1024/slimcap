@@ -1,6 +1,10 @@
 package main
 
-import "github.com/fako1024/slimcap/examples/log"
+import (
+	"github.com/els0r/telemetry/logging"
+)
+
+var logger *logging.L
 
 func main() {
 
@@ -16,6 +20,6 @@ func main() {
 		WithCPUProfiling(cfg.CPUProfileOutput).
 		WithMemProfiling(cfg.MemProfileOutput).
 		Run(); err != nil {
-		log.Fatal("critical error during capture: %s", err)
+		logger.Fatalf("critical error during capture: %s", err)
 	}
 }

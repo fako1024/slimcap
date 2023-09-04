@@ -3,10 +3,12 @@ package main
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"io"
+	"os"
 
+	"github.com/els0r/telemetry/logging"
 	"github.com/fako1024/slimcap/capture/pcap"
-	"github.com/fako1024/slimcap/examples/log"
 )
 
 func main() {
@@ -17,38 +19,44 @@ func main() {
 		raw      bool
 	)
 
+	logger, logErr := logging.New(logging.LevelInfo, logging.EncodingPlain)
+	if logErr != nil {
+		fmt.Fprintf(os.Stderr, "failed to instantiate CLI logger: %v\n", logErr)
+		os.Exit(1)
+	}
+
 	flag.StringVar(&fileName, "f", "", "pcap file to read from")
 	flag.IntVar(&maxPkts, "n", 10, "maximum number of packets to process")
 	flag.BoolVar(&raw, "r", false, "output raw packet information")
 	flag.Parse()
 	if fileName == "" {
-		log.Fatal("no input file specified (-f)")
+		logger.Fatalf("no input file specified (-f)")
 	}
 
 	listener, err := pcap.NewSourceFromFile(fileName)
 	if err != nil {
-		log.Fatal("failed to start pcap reader for `%s`: %s", fileName, err)
+		logger.Fatalf("failed to start pcap reader for `%s`: %s", fileName, err)
 	}
 
 	defer func() {
 		if err := listener.Close(); err != nil {
-			log.Fatal("failed to close listener on `%s`: %s", fileName, err)
+			logger.Fatalf("failed to close listener on `%s`: %s", fileName, err)
 		}
 	}()
 
-	log.Info("Reading up to %d packets from `%s` (link type: %d)...", maxPkts, fileName, listener.Link().Type)
+	logger.Infof("Reading up to %d packets from `%s` (link type: %d)...", maxPkts, fileName, listener.Link().Type)
 	for i := 0; i < maxPkts; i++ {
 		p, err := listener.NextPacket(nil)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				return
 			}
-			log.Fatal("error during packet reading (copy operation) on `%s`: %s", fileName, err)
+			logger.Fatalf("error during packet reading (copy operation) on `%s`: %s", fileName, err)
 		}
 		if raw {
-			log.Info("Read packet with Payload (total len %d): %v", p.TotalLen(), p.Payload())
+			logger.Infof("Read packet with Payload (total len %d): %v", p.TotalLen(), p.Payload())
 		} else {
-			log.Info("Read packet (total len %d): %v", p.TotalLen(), p.IPLayer().String())
+			logger.Infof("Read packet (total len %d): %v", p.TotalLen(), p.IPLayer().String())
 		}
 	}
 }
