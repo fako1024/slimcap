@@ -9,8 +9,7 @@ import (
 )
 
 // Handler wraps a socket file descriptor and an event file descriptor in a single
-// instance. In addition, a (unexported) mock file descriptor allows for mocking
-// the entire handler without having to manipulate / distinguish from the caller side
+// instance
 type Handler struct {
 
 	// Efd denotes the event file descriptor of this handler
