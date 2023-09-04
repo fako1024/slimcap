@@ -1,15 +1,10 @@
 package main
 
-import (
-	"go.uber.org/zap"
-)
-
-var logger *zap.SugaredLogger
+import "github.com/fako1024/slimcap/examples/log"
 
 func main() {
 
 	cfg := ParseConfig()
-	defer logger.Sync()
 
 	c := &Capture{}
 	if err := c.OnIfaces(cfg.Ifaces).
@@ -21,6 +16,6 @@ func main() {
 		WithCPUProfiling(cfg.CPUProfileOutput).
 		WithMemProfiling(cfg.MemProfileOutput).
 		Run(); err != nil {
-		logger.Fatalf("critical error during capture: %s", err)
+		log.Fatal("critical error during capture: %s", err)
 	}
 }

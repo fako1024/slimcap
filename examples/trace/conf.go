@@ -2,11 +2,9 @@ package main
 
 import (
 	"flag"
-	"fmt"
-	"os"
 	"strings"
 
-	"go.uber.org/zap"
+	"github.com/fako1024/slimcap/examples/log"
 )
 
 const (
@@ -59,22 +57,7 @@ func ParseConfig() (cfg Config) {
 	cfg.Ifaces = parseList(rawIfaces)
 	cfg.SkipIfaces = parseList(rawSkipIfaces)
 
-	lvl, err := zap.ParseAtomicLevel(strings.ToLower(cfg.LogLevel))
-	if err != nil {
-		fmt.Printf("failed to parse log level: %s\n", err)
-		os.Exit(1)
-	}
-
-	logCfg := zap.NewDevelopmentConfig()
-	logCfg.DisableStacktrace = true
-	logCfg.Level.SetLevel(lvl.Level())
-	zapLogger, err := logCfg.Build()
-	if err != nil {
-		fmt.Printf("failed to instantiate logger: %s\n", err)
-		os.Exit(1)
-	}
-
-	logger = zapLogger.Sugar()
+	log.SetLevel(cfg.LogLevel)
 
 	return
 }
