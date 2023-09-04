@@ -189,8 +189,9 @@ func FindAllLinks() ([]*Link, error) {
 
 func calculateInitialFilterMask(i Interface) (mask byte) {
 
-	// Loopback devices will show all packets twice (for obvious reasonse). In order to avoid
-	// this duplication, a default filter is applied, rejecting all outbound packets
+	// Loopback devices will show all packets twice (for obvious reasons). In order to avoid
+	// this duplication, a default filter is applied, rejecting all outbound packets (this is
+	// in line with best practices, e.g. handling by libpcap).
 	if i.Type == TypeLoopback {
 		mask |= 4 // capture.PacketOutgoing
 	}
