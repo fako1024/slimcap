@@ -7,21 +7,11 @@ import (
 	"io"
 	"os"
 
+	"github.com/els0r/telemetry/logging"
 	"github.com/fako1024/slimcap/capture/pcap"
-	"go.uber.org/zap"
 )
 
-var logger *zap.SugaredLogger
-
 func main() {
-
-	zapLogger, err := zap.NewDevelopment()
-	if err != nil {
-		fmt.Printf("failed to instantiate logger: %s\n", err)
-		os.Exit(1)
-	}
-	defer zapLogger.Sync()
-	logger = zapLogger.Sugar()
 
 	var (
 		fileName string
@@ -29,12 +19,18 @@ func main() {
 		raw      bool
 	)
 
+	logger, logErr := logging.New(logging.LevelInfo, logging.EncodingPlain)
+	if logErr != nil {
+		fmt.Fprintf(os.Stderr, "failed to instantiate CLI logger: %v\n", logErr)
+		os.Exit(1)
+	}
+
 	flag.StringVar(&fileName, "f", "", "pcap file to read from")
 	flag.IntVar(&maxPkts, "n", 10, "maximum number of packets to process")
 	flag.BoolVar(&raw, "r", false, "output raw packet information")
 	flag.Parse()
 	if fileName == "" {
-		logger.Fatal("no input file specified (-f)")
+		logger.Fatalf("no input file specified (-f)")
 	}
 
 	listener, err := pcap.NewSourceFromFile(fileName)
@@ -63,6 +59,4 @@ func main() {
 			logger.Infof("Read packet (total len %d): %v", p.TotalLen(), p.IPLayer().String())
 		}
 	}
-
-	return
 }

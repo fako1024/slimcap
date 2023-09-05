@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"go.uber.org/zap"
+	"github.com/els0r/telemetry/logging"
 )
 
 const (
@@ -59,22 +59,12 @@ func ParseConfig() (cfg Config) {
 	cfg.Ifaces = parseList(rawIfaces)
 	cfg.SkipIfaces = parseList(rawSkipIfaces)
 
-	lvl, err := zap.ParseAtomicLevel(strings.ToLower(cfg.LogLevel))
-	if err != nil {
-		fmt.Printf("failed to parse log level: %s\n", err)
+	var logErr error
+	logger, logErr = logging.New(logging.LevelFromString(cfg.LogLevel), logging.EncodingPlain)
+	if logErr != nil {
+		fmt.Fprintf(os.Stderr, "failed to instantiate CLI logger: %v\n", logErr)
 		os.Exit(1)
 	}
-
-	logCfg := zap.NewDevelopmentConfig()
-	logCfg.DisableStacktrace = true
-	logCfg.Level.SetLevel(lvl.Level())
-	zapLogger, err := logCfg.Build()
-	if err != nil {
-		fmt.Printf("failed to instantiate logger: %s\n", err)
-		os.Exit(1)
-	}
-
-	logger = zapLogger.Sugar()
 
 	return
 }

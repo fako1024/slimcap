@@ -1,15 +1,14 @@
 package main
 
 import (
-	"go.uber.org/zap"
+	"github.com/els0r/telemetry/logging"
 )
 
-var logger *zap.SugaredLogger
+var logger *logging.L
 
 func main() {
 
 	cfg := ParseConfig()
-	defer logger.Sync()
 
 	c := &Capture{}
 	if err := c.OnIfaces(cfg.Ifaces).

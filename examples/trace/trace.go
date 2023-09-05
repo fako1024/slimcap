@@ -17,6 +17,7 @@ import (
 	"github.com/fako1024/slimcap/link"
 )
 
+// Capture denotes a simple capturing structure / manager
 type Capture struct {
 	ifaces, skipIfaces []string
 	maxIfaceErrors     int
@@ -28,46 +29,55 @@ type Capture struct {
 	memProfilePath string
 }
 
+// OnIfaces sets the interfaces to capture / process on
 func (c *Capture) OnIfaces(ifaces []string) *Capture {
 	c.ifaces = ifaces
 	return c
 }
 
+// SkipIfaces sets an optional list of interfaces to skip
 func (c *Capture) SkipIfaces(ifaces []string) *Capture {
 	c.skipIfaces = ifaces
 	return c
 }
 
+// MaxIfaceErrors sets the maximum number of errors allowed to occur before capture is terminated
 func (c *Capture) MaxIfaceErrors(max int) *Capture {
 	c.maxIfaceErrors = max
 	return c
 }
 
+// UseRingBuffer enables / disables the use of the AF_PACKET ring buffer
 func (c *Capture) UseRingBuffer(b bool) *Capture {
 	c.useRingBuffer = b
 	return c
 }
 
+// UseZeroCopy enables / disables processing via zero-copy methods
 func (c *Capture) UseZeroCopy(b bool) *Capture {
 	c.useZeroCopy = b
 	return c
 }
 
+// LogPacketPayload enables / disables verbose logging of the packet payload
 func (c *Capture) LogPacketPayload(b bool) *Capture {
 	c.logPacketPayload = b
 	return c
 }
 
+// WithCPUProfiling enables CPU profiling and stores it at the provided destination / path
 func (c *Capture) WithCPUProfiling(profilePath string) *Capture {
 	c.cpuProfilePath = profilePath
 	return c
 }
 
+// WithMemProfiling enables memory profiling and stores it at the provided destination / path
 func (c *Capture) WithMemProfiling(profilePath string) *Capture {
 	c.memProfilePath = profilePath
 	return c
 }
 
+// Run starts the capture
 func (c *Capture) Run() (err error) {
 
 	if c.cpuProfilePath != "" {
@@ -75,7 +85,9 @@ func (c *Capture) Run() (err error) {
 		if err != nil {
 			return err
 		}
-		pprof.StartCPUProfile(f)
+		if err := pprof.StartCPUProfile(f); err != nil {
+			return err
+		}
 		defer pprof.StopCPUProfile()
 	}
 	if c.memProfilePath != "" {
@@ -88,7 +100,6 @@ func (c *Capture) Run() (err error) {
 			if perr := pprof.Lookup("allocs").WriteTo(f, 0); perr != nil {
 				err = perr
 			}
-			return
 		}()
 	}
 
@@ -175,7 +186,7 @@ func (c *Capture) Run() (err error) {
 
 			var listener capture.Source
 			if c.useRingBuffer {
-				listener, err = afring.NewSourceFromLink(l)
+				listener, err = afring.NewSourceFromLink(l, afring.CaptureLength(link.CaptureLengthMinimalIPv6Transport))
 				if err != nil {
 					logger.Errorf("error starting listener (with ring buffer) on `%s`: %s", l.Name, err)
 				}
@@ -238,7 +249,7 @@ func (c *Capture) Run() (err error) {
 			if err != nil {
 				logger.Errorf("failed to retrieve socket stats: %s", err)
 			}
-			logger.Infof("Packet stats: %#v", stats)
+			logger.Infof("Packet stats for %s: %#v", listener.Link().Name, stats)
 
 			if err := listener.Close(); err != nil {
 				logger.Errorf("failed to gracefully stop capture: %s", err)

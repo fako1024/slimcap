@@ -5,27 +5,23 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/els0r/telemetry/logging"
 	"github.com/fako1024/slimcap/capture/afpacket/afring"
 	"github.com/fako1024/slimcap/link"
-	"go.uber.org/zap"
 )
 
-var logger *zap.SugaredLogger
-
 func main() {
-
-	zapLogger, err := zap.NewDevelopment()
-	if err != nil {
-		fmt.Printf("failed to instantiate logger: %s\n", err)
-		os.Exit(1)
-	}
-	defer zapLogger.Sync()
-	logger = zapLogger.Sugar()
 
 	var (
 		devName string
 		maxPkts int
 	)
+
+	logger, logErr := logging.New(logging.LevelInfo, logging.EncodingPlain)
+	if logErr != nil {
+		fmt.Fprintf(os.Stderr, "failed to instantiate CLI logger: %v\n", logErr)
+		os.Exit(1)
+	}
 
 	flag.StringVar(&devName, "d", "", "device / interface to capture on")
 	flag.IntVar(&maxPkts, "n", 10, "maximum number of packets to capture")
@@ -75,6 +71,4 @@ func main() {
 	if err := listener.Close(); err != nil {
 		logger.Fatalf("failed to close listener on `%s`: %s", devName, err)
 	}
-
-	return
 }
