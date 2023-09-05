@@ -41,10 +41,10 @@ const (
 	// TypeInvalid denotes an invalid link type
 	TypeInvalid Type = iota
 
-	// TypeEthernet denotes a link of type ARPHRD_LOOPBACK
+	// TypeEthernet denotes a link of type ARPHRD_ETHER
 	TypeEthernet Type = 1
 
-	// TypeLoopback denotes a link of type ARPHRD_ETHER
+	// TypeLoopback denotes a link of type ARPHRD_LOOPBACK
 	TypeLoopback Type = 772
 
 	// TypePPP denotes a link of type ARPHRD_PPP
@@ -104,10 +104,20 @@ func (l Type) BPFFilter() func(snapLen int) []bpf.RawInstruction {
 // Link denotes a link, i.e. an interface (wrapped) and its link type
 type Link struct {
 	Interface
+
+	filterMask byte
+}
+
+// WithPacketFilterMask sets / enables a packet type filter (masking) that will be applied
+// during capture
+func WithPacketFilterMask(mask byte) func(l *Link) {
+	return func(l *Link) {
+		l.filterMask |= mask
+	}
 }
 
 // New instantiates a new link / interface
-func New(ifName string) (link *Link, err error) {
+func New(ifName string, opts ...func(*Link)) (link *Link, err error) {
 
 	iface, lerr := NewInterface(ifName)
 	if lerr != nil {
@@ -134,14 +144,27 @@ func New(ifName string) (link *Link, err error) {
 		return
 	}
 
-	return &Link{
-		Interface: iface,
-	}, nil
+	link = &Link{
+		Interface:  iface,
+		filterMask: calculateInitialFilterMask(iface),
+	}
+
+	// Apply functional options, if any
+	for _, opt := range opts {
+		opt(link)
+	}
+
+	return
 }
 
 // IsUp returns if a link / interface is up
 func (l *Link) IsUp() (bool, error) {
 	return l.Interface.IsUp()
+}
+
+// FilterMask returns the packet type filter for this link / interface
+func (l *Link) FilterMask() byte {
+	return l.filterMask
 }
 
 // FindAllLinks retrieves all system network interfaces and their link type
@@ -162,4 +185,16 @@ func FindAllLinks() ([]*Link, error) {
 	}
 
 	return links, err
+}
+
+func calculateInitialFilterMask(i Interface) (mask byte) {
+
+	// Loopback devices will show all packets twice (for obvious reasons). In order to avoid
+	// this duplication, a default filter is applied, rejecting all outbound packets (this is
+	// in line with best practices, e.g. handling by libpcap).
+	if i.Type == TypeLoopback {
+		mask |= 4 // capture.PacketOutgoing
+	}
+
+	return
 }
