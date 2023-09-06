@@ -6,17 +6,19 @@
 [![Build/Test Status](https://github.com/fako1024/slimcap/workflows/Go/badge.svg)](https://github.com/fako1024/slimcap/actions?query=workflow%3AGo)
 [![CodeQL](https://github.com/fako1024/slimcap/actions/workflows/codeql.yml/badge.svg)](https://github.com/fako1024/slimcap/actions/workflows/codeql.yml)
 
-This package provides a simple yet powerful interface to network packet capture / sniffing. It is focused on high performance / traffic throughput.
+This package provides a simple yet powerful interface to perform network packet capture / sniffing. It is focused on high performance / traffic throughput.
+
+## Features
+- Support for raw payload / IP layer packet capture via AF_PACKET (Linux) directly from network socket or using a ring buffer
+- Minimal CPU usage and memory (allocation) footprint, support for zero-copy operations
+- Virtual / mock capture sources including traffic replay from PCAP files (or even "chaining" multiple sources)
+- Inherent support for packet type / direction detection
+- Written in native Go (no `CGO` dependency)
 
 > [!WARNING]
 > **This package does *not* perform any payload / network layer decoding**\
 > `slimcap` is aimed at doing the heavy lifting of extracting up to the IP layer of network packets with the utmost performance possible. All further parsing / processing must
 > be done by the caller.
-
-## Features
-- Support for raw / IP layer network packet capture via AF_PACKET (Linux) directly from network socket or via ring buffer
-- Minimal memory and CPU usage footprint, support for zero-copy operations
-- Virtual / mock capture sources including traffic replay from PCAP files (or even "chaining" multiple sources)
 
 ## Installation
 ```bash
@@ -38,7 +40,8 @@ p, err := listener.NextPacket(nil)
 if err != nil {
 	// Error handling
 }
-fmt.Printf("Received packet on enp1s0 (total len %d): %v (inbound: %v)\n", p.TotalLen(), p.Payload(), p.IsInbound())
+fmt.Printf("Received packet on enp1s0 (total len %d): %v (inbound: %v)\n",
+	p.TotalLen(), p.Payload(), p.IsInbound())
 
 // Capture a packet from the wire (copy to existing / reusable buffer packet)
 pBuf := listener.NewPacket()
@@ -46,11 +49,13 @@ p, err := listener.NextPacket(pBuf)
 if err != nil {
 	// Error handling
 }
-fmt.Printf("Received packet on enp1s0 (total len %d): %v (inbound: %v)\n", p.TotalLen(), p.Payload(), p.IsInbound())
+fmt.Printf("Received packet on enp1s0 (total len %d): %v (inbound: %v)\n",
+	p.TotalLen(), p.Payload(), p.IsInbound())
 
 // Capture a packet from the wire (function execution)
 if err := listener.NextPacketFn(func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte) (err error) {
-	fmt.Printf("Received packet on enp1s0 (total len %d): %v (inbound: %v)\n", totalLen, payload, pktType != capture.PacketOutgoing)
+	fmt.Printf("Received packet on enp1s0 (total len %d): %v (inbound: %v)\n",
+		totalLen, payload, pktType != capture.PacketOutgoing)
 	return
 }); err != nil {
 	// Error handling
@@ -77,26 +82,49 @@ payload, pktType, totalLen, err := listener.NextPayloadZeroCopy()
 if err != nil {
 	// Error handling
 }
-fmt.Printf("Received payload on enp1s0 (total len %d): %v (inbound: %v)\n", totalLen, payload, pktType != capture.PacketOutgoing)
+fmt.Printf("Received payload on enp1s0 (total len %d): %v (inbound: %v)\n",
+	totalLen, payload, pktType != capture.PacketOutgoing)
 
 // Capture a packet (IP layer only) from the wire (zero-copy, no heap allocation)
 ipLayer, pktType, totalLen, err := listener.NextIPPacketZeroCopy()
 if err != nil {
 	// Error handling
 }
-fmt.Printf("Received IP layer on enp1s0 (total len %d): %v (inbound: %v)\n", totalLen, ipLayer, pktType != capture.PacketOutgoing)
+fmt.Printf("Received IP layer on enp1s0 (total len %d): %v (inbound: %v)\n",
+	totalLen, ipLayer, pktType != capture.PacketOutgoing)
 
 // Close the listener / the capture
 if err := listener.Close(); err != nil {
 	// Error handling
 }
 ```
-> [!WARNING] In zero-copy mode, andy and all interactions with the payload / ipLayer must be concluded prior to the next invocation of `Next...ZeroCopy()` since the calls provide direct access to the memory areas allocated by AF_PACKET (which may be overwritten by the next call)!
 
-For further examples, please refer to the implementations in [examples](./examples). A production-level project that uses `slimcap` and showcases all its capabilities is [goProbe](https://github.com/els0r/goProbe).
+> [!WARNING]
+> In zero-copy mode, andy and all interactions with the payload / ipLayer must be concluded prior to the next invocation of `Next...ZeroCopy()` since the calls provide direct access to the memory areas allocated by AF_PACKET (which may be overwritten by the next call)!
+
+For further examples, please refer to the implementations in [examples](./examples). A production-level project that uses `slimcap` and showcases all its capabilities (including end-to-end testing using mock sources) is [goProbe](https://github.com/els0r/goProbe).
+
+## Performance
+The following benchmarks (c.f. [afring_mock_test.go](./capture/afpacket/afring/afring_mock_test.go)) show the relative difference in
+general performance and memory allocation footprint of a single packet retrieval (obtained on a commodity Laptop using mock capture sources). For obvious reasons, zero-copy mode performs best and hence should be chosen in high-throughput scenarios:
+```
+goarch: amd64
+pkg: github.com/fako1024/slimcap/capture/afpacket/afring
+cpu: Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz
+BenchmarkCaptureMethods
+BenchmarkCaptureMethods/NextPacket         		226401712	  74.60 ns/op	64 B/op	  1 allocs/op
+BenchmarkCaptureMethods/NextPacketInPlace  		353661006	  32.17 ns/op	 0 B/op	  0 allocs/op
+BenchmarkCaptureMethods/NextPayload        		176332635	  63.81 ns/op	48 B/op	  1 allocs/op
+BenchmarkCaptureMethods/NextPayloadInPlace 		516911223	  21.65 ns/op	 0 B/op	  0 allocs/op
+BenchmarkCaptureMethods/NextPayloadZeroCopy     535092314	  19.67 ns/op	 0 B/op	  0 allocs/op
+BenchmarkCaptureMethods/NextIPPacket            179753388	  64.18 ns/op	48 B/op	  1 allocs/op
+BenchmarkCaptureMethods/NextIPPacketInPlace     381187490	  28.33 ns/op	 0 B/op	  0 allocs/op
+BenchmarkCaptureMethods/NextIPPacketZeroCopy    567278034	  19.67 ns/op	 0 B/op	  0 allocs/op
+BenchmarkCaptureMethods/NextPacketFn            559334258	  20.44 ns/op	 0 B/op	  0 allocs/op
+```
 
 ## Capture Mocks / Testing
-In order to support extensive testing up to end-to-end level without having to rely on _actual_ network interface capture, both plain AF_PACKET and ring buffer captures are provided with mock-level sources implementing / wrapping their actual implementations. Hence, it is possible to simply exchange any invocation of an `afpacket` or `afring` source with their respective mock counterpart, e.g.change:
+In order to support extensive testing up to end-to-end level without having to rely on _actual_ network interface capture, both plain AF_PACKET and ring buffer captures are provided with mock-level sources implementing / wrapping their actual implementations. Hence, it is possible to simply exchange any invocation of an `afpacket` or `afring` source with their respective mock counterpart, e.g. by changing:
 ```go
 listener, err := afring.NewSource("enp1s0",
 	// Options
