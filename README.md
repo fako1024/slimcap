@@ -17,7 +17,7 @@ This package provides a simple yet powerful interface to perform network packet 
 
 > [!WARNING]
 > **This package does *not* perform any payload / network layer decoding**\
-> `slimcap` is aimed at doing the heavy lifting of extracting up to the IP layer of network packets with the utmost performance possible. All further parsing / processing must
+> `slimcap` is aimed at doing the heavy lifting of extracting up to the IP layer of network packets with the utmost performance possible (and hence limits itself to packets which actually _have_ an IP layer). All further parsing / processing must
 > be done by the caller.
 
 ## Installation
