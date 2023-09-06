@@ -5,3 +5,6 @@ examples/pcap/pcap
 
 # Any test binaries
 *.test
+
+# VS Code files
+.vscode
