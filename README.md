@@ -26,7 +26,7 @@ go get -u github.com/fako1024/slimcap
 ```
 
 ## Usage
-Perform simple capture of a few packets on a network interface using the various options of the `capture.Source` interface, using a fixed capture length (i.e. snaplen) of 64 bytes:
+#### **Perform simple capture of a few packets on a network interface using the various options of the `capture.Source` interface, using a fixed capture length (i.e. snaplen) of 64 bytes:**
 ```go
 listener, err := afpacket.NewSource("enp1s0",
 	afpacket.CaptureLength(link.CaptureLengthFixed(64)),
@@ -66,7 +66,7 @@ if err := listener.Close(); err != nil {
 	// Error handling
 }
 ```
-Perform zero-copy capture of a few packets on a network interface using the various options of the `capture.SourceZeroCopy` interface, using an optimal capture length (i.e. snaplen) to ensure any transport layer can be accessed for IPv4 & IPv6 packets and setting custom ring buffer size / number of blocks:
+#### **Perform zero-copy capture of a few packets on a network interface using the various options of the `capture.SourceZeroCopy` interface, using an optimal capture length (i.e. snaplen) to ensure any transport layer can be accessed for IPv4 & IPv6 packets and setting custom ring buffer size / number of blocks:**
 ```go
 listener, err := afring.NewSource("enp1s0",
 	afring.CaptureLength(link.CaptureLengthMinimalIPv6Transport),
@@ -100,7 +100,7 @@ if err := listener.Close(); err != nil {
 ```
 
 > [!WARNING]
-> In zero-copy mode, andy and all interactions with the payload / ipLayer must be concluded prior to the next invocation of `Next...ZeroCopy()` since the calls provide direct access to the memory areas allocated by AF_PACKET (which may be overwritten by the next call)!
+> In zero-copy mode, any and all interaction with the payload / IP Layer must be concluded prior to the next invocation of `Next...ZeroCopy()` since the calls provide direct access to the memory areas allocated by AF_PACKET (which may be overwritten by the next call)!
 
 For further examples, please refer to the implementations in [examples](./examples). A production-level project that uses `slimcap` and showcases all its capabilities (including end-to-end testing using mock sources) is [goProbe](https://github.com/els0r/goProbe).
 
@@ -137,7 +137,7 @@ listener, err := afring.NewMockSource("enp1s0",
 )
 ```
 By either generating synthetic packet data or piping previously captured packets from a PCAP file these mock sources can then be used just like actual capture sources, e.g. for testing purposes. Some good examples on how to perform test using mocks can be found in [afpacket_mock_test.go](./capture/afpacket/afpacket/afpacket_mock_test.go) and [afring_mock_test.go](./capture/afpacket/afring/afring_mock_test.go), respectively.
-Since the mock implementations incur a minor, yet siginificant performance overhead (even if not used), `slimcap` supports a build tag that allows disabling mocks completely (which in turn will also remove the aforementioned overhead):
+Since the mock implementations incur a minor, yet significant performance overhead (even if not used), `slimcap` supports a build tag that allows disabling mocks completely (which in turn will also remove the aforementioned overhead):
 ```bash
 go build -tags slimcap_nomock
 ```
