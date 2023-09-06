@@ -1,3 +1,9 @@
+/*
+Package link provides access to network interfaces and their parameters, such as link type and flags.
+In addition, it provides the IP layer offset for each link type and implements default BPF filtering
+to maximize throughput (by selecting only packets that subsequently can be processed / parsed by the
+routines provided by slimcap).
+*/
 package link
 
 import (

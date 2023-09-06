@@ -1,3 +1,7 @@
+/*
+Package dump provides a simple packet dump tool that will simply consume up to a certain number
+of network packets from the provided interface and then exit.
+*/
 package main
 
 import (

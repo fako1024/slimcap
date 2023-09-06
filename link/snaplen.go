@@ -18,13 +18,13 @@ var (
 		}
 	}
 
-	// CaptureLengthMinimalIPv4 indicates that the minimal necessary length to
+	// CaptureLengthMinimalIPv4Header indicates that the minimal necessary length to
 	// facilitate IPv4 layer analysis should be chosen
 	CaptureLengthMinimalIPv4Header = func(l *Link) int {
 		return int(l.Type.IPHeaderOffset()) + ipv4.HeaderLen // include full IPv4 header
 	}
 
-	// CaptureLengthMinimalIPv6 indicates that the minimal necessary length to
+	// CaptureLengthMinimalIPv6Header indicates that the minimal necessary length to
 	// facilitate IPv6 layer analysis should be chosen
 	CaptureLengthMinimalIPv6Header = func(l *Link) int {
 		return int(l.Type.IPHeaderOffset()) + ipv6.HeaderLen // include full IPv6 header

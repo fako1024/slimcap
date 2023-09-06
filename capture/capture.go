@@ -1,3 +1,13 @@
+/*
+Package capture provides the high level / central interface definitions for all slimcap capture
+sources and core structures. Two Interfaces are supported:
+
+  - Source : The most general definition of methods any capture source must provide
+  - SourceZeroCopy : An extended interface definition adding capabilities for zero-copy operations
+
+In addition to the capture source interfaces it provides the most basic implementation of a network
+packet, including basic interaction methods (e.g. packet length, payload, type, ...).
+*/
 package capture
 
 import (
@@ -20,7 +30,7 @@ var (
 	// ErrCaptureStopped denotes that the capture was stopped
 	ErrCaptureStopped = errors.New("capture was stopped")
 
-	// ErrCaptureUnblock denotes that the capture received an unblocking signal
+	// ErrCaptureUnblocked denotes that the capture received an unblocking signal
 	ErrCaptureUnblocked = errors.New("capture was released / unblocked")
 )
 
@@ -177,7 +187,7 @@ func NewIPPacket(buf Packet, payload []byte, pktType PacketType, totalLen int, i
 
 	buf[0] = pktType
 	buf[1] = ipLayerOffset
-	*(*uint32)(unsafe.Pointer(&buf[2])) = uint32(totalLen)
+	*(*uint32)(unsafe.Pointer(&buf[2])) = uint32(totalLen) // #nosec G103
 	copy(buf[PacketHdrOffset:], payload)
 
 	return buf
@@ -185,7 +195,7 @@ func NewIPPacket(buf Packet, payload []byte, pktType PacketType, totalLen int, i
 
 // TotalLen returnsthe total packet length, including all headers
 func (p *Packet) TotalLen() uint32 {
-	return *(*uint32)(unsafe.Pointer(&(*p)[2]))
+	return *(*uint32)(unsafe.Pointer(&(*p)[2])) // #nosec G103
 }
 
 // Len returns the actual data length of the packet payload as consumed from the wire

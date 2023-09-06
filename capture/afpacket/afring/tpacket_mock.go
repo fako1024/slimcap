@@ -10,9 +10,9 @@ import (
 
 // / -> Block Header
 func (t tPacketHeader) getStatus() uint32 {
-	return atomic.LoadUint32((*uint32)(unsafe.Pointer(&t.data[8])))
+	return atomic.LoadUint32((*uint32)(unsafe.Pointer(&t.data[8]))) // #nosec G103
 }
 
 func (t tPacketHeader) setStatus(status uint32) {
-	atomic.StoreUint32((*uint32)(unsafe.Pointer(&t.data[8])), status)
+	atomic.StoreUint32((*uint32)(unsafe.Pointer(&t.data[8])), status) // #nosec G103
 }

@@ -1,6 +1,13 @@
 //go:build linux
 // +build linux
 
+/*
+Package afpacket implements a capture.Source that allows reading network packets from
+Linux network interfaces via the AF_PACKET mechanism. This implementation relies on performing
+repeated `recvfrom()` calls to the allocated socket to fetch packets one by one. Consequently,
+the performance / trhoughput is limited and it should only be used for educational / experimental
+purposed. For production-level packet capture, use the `afring` package instead.
+*/
 package afpacket
 
 import (

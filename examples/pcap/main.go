@@ -1,3 +1,7 @@
+/*
+Package pcap provides a simple packet dump tool that will simply consume up to a certain number
+of previously captured network packets from the provided pcap file, optionally log them and then exit.
+*/
 package main
 
 import (
