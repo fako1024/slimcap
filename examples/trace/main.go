@@ -1,3 +1,8 @@
+/*
+Package trace provides a comprehensive tool that supports various common use cases when
+interacting with the `slimcap` module, including plain and ring-buffer AF_PACKET capture
+on multiple interfaces, zero-copy mode (if requested) and optional logging and profiling.
+*/
 package main
 
 import (

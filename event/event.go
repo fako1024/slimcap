@@ -1,6 +1,14 @@
 //go:build linux
 // +build linux
 
+/*
+Package event provides access to system-level event file descriptors that act as semaphores and
+notification mechanism to facilitate AF_PACKET network traffic capture. This is achieved either via
+conventional recvfrom() operations (per-packet retrieval in afpacket/afpacket) or via PPOLL and
+the kernel ring buffer (per-block retrieval in afpacket/afring).
+In the latter case, a highly optimized assembler implementation is used (for AMD64 / ARM64 architectures)
+in order to maximize throughput (by releasing resources as early as possible for the next poll operation).
+*/
 package event
 
 import (

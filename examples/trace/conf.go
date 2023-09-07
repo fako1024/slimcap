@@ -9,6 +9,7 @@ import (
 	"github.com/els0r/telemetry/logging"
 )
 
+// Definitions for command line option names
 const (
 	Ifaces             = "ifaces"
 	LogLevel           = "log-level"
@@ -21,11 +22,13 @@ const (
 	LogPacketPayload   = "log-packets"
 )
 
+// Tool-wide constants / defaults
 const (
 	DefaultLogLevel       = "info"
 	DefaultMaxIfaceErrors = 10
 )
 
+// Config denotes the configuration for the trace tool
 type Config struct {
 	Ifaces           []string
 	SkipIfaces       []string
@@ -39,6 +42,7 @@ type Config struct {
 	MemProfileOutput string
 }
 
+// ParseConfig extracts the configuration parameters to be used for capture from the command line
 func ParseConfig() (cfg Config) {
 
 	var rawIfaces, rawSkipIfaces string

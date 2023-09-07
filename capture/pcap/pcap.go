@@ -1,3 +1,10 @@
+/*
+Package pcap allows reading / parsing pcap files (compressed and uncompressed) and implement the
+capture.Source interface. Consequently, an instance can act as network capture source, allowing
+to replay network traffic previously captured elsewhere. In addition, the pcap package acts as main
+facilitaty for testing (since it allows to mimic a live network traffic capture without the need
+for privileged access and / or actual network interfaces).
+*/
 package pcap
 
 import (
@@ -118,6 +125,10 @@ func (s *Source) NextPayload(pBuf []byte) ([]byte, capture.PacketType, uint32, e
 	if err != nil {
 		return nil, capture.PacketUnknown, 0, err
 	}
+	if pBuf != nil {
+		copy(pBuf, s.buf)
+		return pBuf, capture.PacketUnknown, uint32(pktHeader.OriginalLen), nil
+	}
 
 	return s.buf, capture.PacketUnknown, uint32(pktHeader.OriginalLen), nil
 }
@@ -130,6 +141,10 @@ func (s *Source) NextIPPacket(pBuf capture.IPLayer) (capture.IPLayer, capture.Pa
 	pktHeader, err := s.nextPacket()
 	if err != nil {
 		return nil, capture.PacketUnknown, 0, err
+	}
+	if pBuf != nil {
+		copy(pBuf, s.buf[s.ipLayerOffset:])
+		return pBuf, capture.PacketUnknown, uint32(pktHeader.OriginalLen), nil
 	}
 
 	return s.buf[s.ipLayerOffset:], capture.PacketUnknown, uint32(pktHeader.OriginalLen), nil

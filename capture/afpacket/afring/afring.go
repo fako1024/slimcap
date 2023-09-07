@@ -1,6 +1,14 @@
 //go:build linux
 // +build linux
 
+/*
+Package afring implements a capture.Source and a capture.SourceZeroCopy that allows reading
+network packets from Linux network interfaces via the AF_PACKET / TPacket ring buffer mechanism.
+This implementation relies on performing optimized `PPOLL()` syscalls to the MMAP'ed socket to
+fetch blocks of packets. The ring buffer is configurable (depending on the expected throughput).
+This capture method is optimally suited for production-level packet capture since it achieves
+blazing-fast capture rates (in particular in zero-copy mode).
+*/
 package afring
 
 import (

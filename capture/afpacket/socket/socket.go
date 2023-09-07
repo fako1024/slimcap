@@ -1,6 +1,11 @@
 //go:build linux
 // +build linux
 
+/*
+Package socket implements AF_PACKET sockets / file descriptors (both for `afring` and plain `afpacket`
+modes). In addition, allocated sockets provide access to packet capture statistics for the underlying
+network interface during capture.
+*/
 package socket
 
 import (
