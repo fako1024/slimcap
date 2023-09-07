@@ -12,9 +12,9 @@ TEXT ·pollBlock(SB),NOSPLIT,$0-12
 	MOVL	$0x0, DX			// Put timeout parameter (set to NULL)
 	MOVL	$0x0, SI                      	// Put sigmask parameter (skip)
 	INVOKE_SYSCALL
-    CMPL    AX, $0xfffff002		        // No error / EINTR
+	CMPL    AX, $0xfffff002		        // No error / EINTR
 	JLS     success			        // Jump to success
-	NEGL    AX			// Negate SYSCALL errno
+	NEGL    AX				// Negate SYSCALL errno
 	MOVL	AX, err+8(FP)			// Store error code in err return value
 	CALL  	runtime·exitsyscall(SB)		// Finalize SYSCALL using the directive from runtime package
 	RET					// Return
