@@ -18,10 +18,11 @@ import (
 type MockFileDescriptor struct {
 	FileDescriptor
 
-	// nPacketsProcessed: Packet counter to provide GetSocketStats() functionality
-	nPacketsProcessed uint64
+	// nPacketsProcessed: Atomic packet counter to provide GetSocketStats() functionality
+	nPacketsProcessed atomic.Uint64
 
-	lastPoll int64
+	// lastPoll: Atomic timestamp tracking the last moment of poll on socket
+	lastPoll atomic.Int64
 
 	buf       chan capture.Packet
 	noRelease atomic.Bool
@@ -45,12 +46,12 @@ func NewMock() (MockFileDescriptor, error) {
 // IncrementPacketCount allows for simulation of packet / traffic statistics by means
 // of manual counting (to be used during population of a mock data source)
 func (m *MockFileDescriptor) IncrementPacketCount(delta uint64) {
-	atomic.AddUint64(&m.nPacketsProcessed, delta)
+	m.nPacketsProcessed.Add(delta)
 }
 
 // LastPoll return the timestamp of the last poll on the FileDescriptor
 func (m *MockFileDescriptor) LastPoll() int64 {
-	return atomic.LoadInt64(&m.lastPoll)
+	return m.lastPoll.Load()
 }
 
 // GetSocketStats returns (and resets) socket / traffic statistics
@@ -64,7 +65,7 @@ func (m *MockFileDescriptor) GetSocketStats() (ss TPacketStats, err error) {
 	// Retrieve TPacket stats for the socket and reset them at the same time using
 	// atomic.Swap
 	ss = TPacketStats{
-		Packets: uint32(atomic.SwapUint64(&m.nPacketsProcessed, 0)),
+		Packets: uint32(m.nPacketsProcessed.Swap(0)),
 	}
 
 	return
@@ -80,7 +81,7 @@ func (m *MockFileDescriptor) GetSocketStatsNoReset() (ss TPacketStats, err error
 
 	// Retrieve TPacket stats for the socket
 	ss = TPacketStats{
-		Packets: uint32(atomic.LoadUint64(&m.nPacketsProcessed)),
+		Packets: uint32(m.nPacketsProcessed.Load()),
 	}
 
 	return
@@ -97,7 +98,7 @@ func (m *MockFileDescriptor) SetNoRelease(enable bool) *MockFileDescriptor {
 // that the next event can be sent
 func (m *MockFileDescriptor) ReleaseSemaphore() (errno unix.Errno) {
 
-	atomic.StoreInt64(&m.lastPoll, time.Now().Unix())
+	m.lastPoll.Store(time.Now().Unix())
 
 	// Skip if noRelease mode is set
 	if m.noRelease.Load() {
