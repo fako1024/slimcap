@@ -1,5 +1,7 @@
 #include "textflag.h"
 
+#define SYS__PPOLL 0x10f
+
 // func pollBlock(fds *unix.PollFd, nfds int) (err syscall.Errno)
 TEXT ·pollBlock(SB),NOSPLIT,$0-24
 	CALL	runtime·entersyscallblock(SB)	// Call blocking SYSCALL directive from runtime package
@@ -7,7 +9,7 @@ TEXT ·pollBlock(SB),NOSPLIT,$0-24
 	MOVQ	nfds+8(FP), SI					// Put nFDs parameter
 	MOVQ	$0x0, DX						// Put timeout parameter (set to NULL)
 	MOVQ	$0x0, R10                      	// Put sigmask parameter (skip)
-	MOVQ	$0x10f, AX						// Prepare / perform ppoll() SYSCALL
+	MOVQ	$SYS__PPOLL, AX					// Prepare / perform ppoll() SYSCALL
 	SYSCALL
 	CMPQ	AX, $0xfffffffffffff002			// No error / EINTR
 	JLS		success							// Jump to success

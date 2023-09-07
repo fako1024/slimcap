@@ -1,5 +1,5 @@
-//go:build (linux && amd64) || (linux && arm64)
-// +build linux,amd64 linux,arm64
+//go:build (linux && amd64) || (linux && arm64) || (linux && arm)
+// +build linux,amd64 linux,arm64 linux,arm
 
 package event
 
