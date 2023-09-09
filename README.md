@@ -112,10 +112,10 @@ goarch: amd64
 pkg: github.com/fako1024/slimcap/capture/afpacket/afring
 cpu: Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz
 BenchmarkCaptureMethods
-BenchmarkCaptureMethods/NextPacket         		226401712	  74.60 ns/op	64 B/op	  1 allocs/op
-BenchmarkCaptureMethods/NextPacketInPlace  		353661006	  32.17 ns/op	 0 B/op	  0 allocs/op
-BenchmarkCaptureMethods/NextPayload        		176332635	  63.81 ns/op	48 B/op	  1 allocs/op
-BenchmarkCaptureMethods/NextPayloadInPlace 		516911223	  21.65 ns/op	 0 B/op	  0 allocs/op
+BenchmarkCaptureMethods/NextPacket         	226401712	  74.60 ns/op	64 B/op	  1 allocs/op
+BenchmarkCaptureMethods/NextPacketInPlace  	353661006	  32.17 ns/op	 0 B/op	  0 allocs/op
+BenchmarkCaptureMethods/NextPayload        	176332635	  63.81 ns/op	48 B/op	  1 allocs/op
+BenchmarkCaptureMethods/NextPayloadInPlace 	516911223	  21.65 ns/op	 0 B/op	  0 allocs/op
 BenchmarkCaptureMethods/NextPayloadZeroCopy     535092314	  19.67 ns/op	 0 B/op	  0 allocs/op
 BenchmarkCaptureMethods/NextIPPacket            179753388	  64.18 ns/op	48 B/op	  1 allocs/op
 BenchmarkCaptureMethods/NextIPPacketInPlace     381187490	  28.33 ns/op	 0 B/op	  0 allocs/op
