@@ -129,11 +129,13 @@ func (m *MockSource) addPacket(payload []byte, totalLen uint32, pktType, ipLayer
 
 	block := m.ringBuffer.ring[thisBlock*m.blockSize : thisBlock*m.blockSize+m.blockSize]
 
-	*(*uint32)(unsafe.Pointer(&block[m.curBlockPos+12])) = uint32(m.snapLen) // #nosec: G103 // snapLen
-	*(*uint32)(unsafe.Pointer(&block[m.curBlockPos+16])) = totalLen          // #nosec: G103 // totalLen
-	*(*uint32)(unsafe.Pointer(&block[m.curBlockPos+24])) = uint32(mac)       // #nosec: G103 // mac
-	block[m.curBlockPos+58] = pktType                                        // pktType
-	copy(block[m.curBlockPos+mac:m.curBlockPos+mac+m.snapLen], payload)      // payload
+	*(*tPacketHeaderV3)(unsafe.Pointer(&block[m.curBlockPos+12])) = tPacketHeaderV3{
+		snaplen: uint32(m.snapLen),
+		pktLen:  totalLen,
+		pktPos:  mac,
+		pktType: pktType,
+	} // #nosec: G103
+	copy(block[m.curBlockPos+mac:m.curBlockPos+mac+m.snapLen], payload) // payload
 
 	// Ensure that there is no "stray" nextOffset set from a previous perusal of this ring buffer block which
 	// might remain in case the block is finalized
