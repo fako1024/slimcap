@@ -89,9 +89,8 @@ func (t tPacketRequest) blockSizeNr() int {
 
 // tPacketHeader denotes a wrapper around the raw data of a TPacket block structure
 type tPacketHeader struct {
-	data      []byte
-	ppos      uint32
-	nPktsLeft uint32
+	data []byte
+	ppos uint32
 }
 
 // tPacketHeaderV3 denotes the V3 tpacket_hdr structure, c.f.
@@ -105,10 +104,6 @@ type tPacketHeaderV3 struct {
 	pktPos  uint16     // 24-26
 	_       [16]uint16 // skip
 	pktType byte       // 58
-}
-
-func (t tPacketHeader) nPkts() uint32 {
-	return *(*uint32)(unsafe.Pointer(&t.data[12])) // #nosec G103
 }
 
 func (t tPacketHeader) offsetToFirstPkt() uint32 {
@@ -127,11 +122,11 @@ func (t tPacketHeader) packetType() byte {
 	return t.data[t.ppos+58]
 }
 
-func (t tPacketHeader) payloadZeroCopy(offset byte) ([]byte, byte, uint32) {
+func (t tPacketHeader) payloadZeroCopy(offset uint32) ([]byte, byte, uint32) {
 
 	// Parse the V3 TPacketHeader and the first byte of the payload
 	hdr := (*tPacketHeaderV3)(unsafe.Pointer(&t.data[t.ppos+12])) // #nosec G103
-	pos := t.ppos + uint32(hdr.pktPos) + uint32(offset)
+	pos := t.ppos + offset + uint32(hdr.pktPos)
 
 	// Return the payload / IP layer subslice & heeader parameters
 	return t.data[pos : pos+hdr.snaplen],
@@ -152,9 +147,9 @@ func (t tPacketHeader) packetPut(data capture.Packet, ipLayerOffset byte) captur
 	}
 
 	// Extract / copy all required data / header parameters
+	t.pktLenPut(data[2:6])
 	data[0] = hdr.pktType
 	data[1] = ipLayerOffset
-	t.pktLenPut(data[2:6])
 	copy(data[6:], t.data[pos:pos+hdr.snaplen])
 
 	// Ensure correct packet length
@@ -165,11 +160,11 @@ func (t tPacketHeader) packetPut(data capture.Packet, ipLayerOffset byte) captur
 	return data
 }
 
-func (t tPacketHeader) payloadPut(data []byte, offset byte) ([]byte, capture.PacketType, uint32) {
+func (t tPacketHeader) payloadPut(data []byte, offset uint32) ([]byte, capture.PacketType, uint32) {
 
 	// Parse the V3 TPacketHeader, the first byte of the payload and snaplen
 	hdr := (*tPacketHeaderV3)(unsafe.Pointer(&t.data[t.ppos+12])) // #nosec G103
-	pos := t.ppos + uint32(hdr.pktPos) + uint32(offset)
+	pos := t.ppos + offset + uint32(hdr.pktPos)
 	snapLen := int(hdr.snaplen)
 
 	// Allocate new payload / IP layer if no buffer was provided
@@ -232,6 +227,10 @@ func blockSizeTPacketAlign(x, blockSize int) (int, error) {
 
 // func (t tPacketHeader) privOffset() uint32 {
 // 	return *(*uint32)(unsafe.Pointer(&t.data[4]))
+// }
+
+// func (t tPacketHeader) nPkts() uint32 {
+// 	return *(*uint32)(unsafe.Pointer(&t.data[12])) // #nosec G103
 // }
 
 // func (t tPacketHeader) snapLen() uint32 {

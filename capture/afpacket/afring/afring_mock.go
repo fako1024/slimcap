@@ -62,6 +62,7 @@ func NewMockSource(_ string, options ...Option) (*MockSource, error) {
 		},
 		eventHandler: mockHandler,
 	}
+	src.ipLayerOffsetNum = uint32(src.ipLayerOffset)
 
 	for _, opt := range options {
 		opt(src)

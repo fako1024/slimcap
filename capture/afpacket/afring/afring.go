@@ -50,6 +50,8 @@ type Source struct {
 	isPromisc          bool
 	link               *link.Link
 
+	ipLayerOffsetNum uint32
+
 	unblocked bool
 
 	ringBuffer
@@ -88,6 +90,7 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 		ipLayerOffset: link.Type.IPHeaderOffset(),
 		link:          link,
 	}
+	src.ipLayerOffsetNum = uint32(src.ipLayerOffset)
 
 	for _, opt := range options {
 		opt(src)
@@ -208,7 +211,7 @@ func (s *Source) NextIPPacket(pBuf capture.IPLayer) (ipLayer capture.IPLayer, pk
 	}
 
 	// Populate the IP layer / buffer & parameters
-	ipLayer, pktType, pktLen = s.curTPacketHeader.payloadPut(ipLayer, s.ipLayerOffset)
+	ipLayer, pktType, pktLen = s.curTPacketHeader.payloadPut(ipLayer, s.ipLayerOffsetNum)
 
 	return
 }
@@ -223,7 +226,7 @@ func (s *Source) NextIPPacketZeroCopy() (ipLayer capture.IPLayer, pktType captur
 	}
 
 	// Extract the IP layer (zero-copy) & parameters
-	ipLayer, pktType, pktLen = s.curTPacketHeader.payloadZeroCopy(s.ipLayerOffset)
+	ipLayer, pktType, pktLen = s.curTPacketHeader.payloadZeroCopy(s.ipLayerOffsetNum)
 
 	return
 }
@@ -351,12 +354,11 @@ fetch:
 		// After fetching a new TPacketHeader, set the position of the first packet and the number of packets
 		// in this TPacketHeader
 		s.curTPacketHeader.ppos = s.curTPacketHeader.offsetToFirstPkt()
-		s.curTPacketHeader.nPktsLeft = s.curTPacketHeader.nPkts()
 	} else {
 
 		// If there is no next offset, release the TPacketHeader to the kernel and fetch a new one
 		nextPos := s.curTPacketHeader.nextOffset()
-		if s.curTPacketHeader.nPktsLeft == 0 {
+		if nextPos == 0 {
 			s.curTPacketHeader.setStatus(unix.TP_STATUS_KERNEL)
 			s.offset = (s.offset + 1) % int(s.tpReq.blockNr)
 			s.curTPacketHeader.data = nil
@@ -366,8 +368,6 @@ fetch:
 		// Update position of next packet
 		s.curTPacketHeader.ppos += nextPos
 	}
-
-	s.curTPacketHeader.nPktsLeft--
 
 	// Apply filter (if any)
 	if filter := s.link.FilterMask(); filter > 0 && filter&s.curTPacketHeader.packetType() != 0 {
