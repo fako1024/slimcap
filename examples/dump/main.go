@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/els0r/telemetry/logging"
+	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/capture/afpacket/afring"
 	"github.com/fako1024/slimcap/link"
 )
@@ -65,7 +66,7 @@ func main() {
 	logger.Infof("Reading %d packets from wire (zero-copy function call)...", maxPkts)
 	for i := 0; i < maxPkts; i++ {
 		if err := listener.NextPacketFn(func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte) (err error) {
-			logger.Infof("Received packet with Payload on `%s` (total len %d): %v (inbound: %v)", devName, totalLen, payload, p.IsInbound())
+			logger.Infof("Received packet with Payload on `%s` (total len %d): %v (inbound: %v)", devName, totalLen, payload, pktType != capture.PacketOutgoing)
 			return
 		}); err != nil {
 			logger.Fatalf("error during capture (zero-copy function call) on `%s`: %s", devName, err)

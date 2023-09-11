@@ -102,8 +102,8 @@ type tPacketHeaderV3 struct {
 	snaplen uint32     // 12-16
 	pktLen  uint32     // 16-20
 	_       uint32     // skip
-	pktPos  uint32     // 24-28
-	_       [15]uint16 // skip
+	pktPos  uint16     // 24-26
+	_       [16]uint16 // skip
 	pktType byte       // 58
 }
 
@@ -131,7 +131,7 @@ func (t tPacketHeader) payloadZeroCopy(offset byte) ([]byte, byte, uint32) {
 
 	// Parse the V3 TPacketHeader and the first byte of the payload
 	hdr := (*tPacketHeaderV3)(unsafe.Pointer(&t.data[t.ppos+12])) // #nosec G103
-	pos := t.ppos + hdr.pktPos + uint32(offset)
+	pos := t.ppos + uint32(hdr.pktPos) + uint32(offset)
 
 	// Return the payload / IP layer subslice & heeader parameters
 	return t.data[pos : pos+hdr.snaplen],
@@ -143,7 +143,7 @@ func (t tPacketHeader) packetPut(data capture.Packet, ipLayerOffset byte) captur
 
 	// Parse the V3 TPacketHeader, the first byte of the payload and snaplen
 	hdr := (*tPacketHeaderV3)(unsafe.Pointer(&t.data[t.ppos+12])) // #nosec G103
-	pos := t.ppos + hdr.pktPos
+	pos := t.ppos + uint32(hdr.pktPos)
 	snapLen := int(hdr.snaplen)
 
 	// Allocate new capture.Packet if no buffer was provided
@@ -169,7 +169,7 @@ func (t tPacketHeader) payloadPut(data []byte, offset byte) ([]byte, capture.Pac
 
 	// Parse the V3 TPacketHeader, the first byte of the payload and snaplen
 	hdr := (*tPacketHeaderV3)(unsafe.Pointer(&t.data[t.ppos+12])) // #nosec G103
-	pos := t.ppos + hdr.pktPos + uint32(offset)
+	pos := t.ppos + uint32(hdr.pktPos) + uint32(offset)
 	snapLen := int(hdr.snaplen)
 
 	// Allocate new payload / IP layer if no buffer was provided
