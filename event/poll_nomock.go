@@ -21,7 +21,7 @@ type Handler struct {
 
 // Poll polls (blocking, hence no timeout) for events on the file descriptor and the event
 // file descriptor (waiting for a POLLIN event).
-func (p *Handler) Poll(events int16) (bool, unix.Errno) {
+func (p *Handler) Poll(events int16) (hasEvent bool, errno unix.Errno) {
 	pollEvents := [...]unix.PollFd{
 		{
 			Fd:     int32(p.Efd),
@@ -33,7 +33,14 @@ func (p *Handler) Poll(events int16) (bool, unix.Errno) {
 		},
 	}
 
-	return poll(pollEvents)
+	// Perform blocking PPOLL
+	errno = pollBlock(&pollEvents[0])
+	if errno == 0 && pollEvents[1].Revents&eventConnReset != 0 {
+		errno = unix.ECONNRESET
+	}
+	hasEvent = pollEvents[0].Revents&eventPollIn != 0
+
+	return
 }
 
 // Recvfrom retrieves data directly from the socket

@@ -9,11 +9,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func pollBlock(fds *unix.PollFd, nfds int) unix.Errno {
+const nPollEvents = uintptr(0x02)
+
+func pollBlock(fds *unix.PollFd) unix.Errno {
 
 	// #nosec: G103
 	_, _, e := unix.Syscall6(unix.SYS_PPOLL, uintptr(unsafe.Pointer(fds)),
-		uintptr(nfds), uintptr(unsafe.Pointer(nil)), 0, 0, 0)
+		nPollEvents, uintptr(unsafe.Pointer(nil)), 0, 0, 0)
 
 	return e
 }
