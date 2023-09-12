@@ -3,7 +3,7 @@
 #define SYS__PPOLL 0x150
 #define N_EVTS 0x02
 
-// func pollBlock(fds *unix.PollFd) (err syscall.Errno)
+// func pollBlock(fds *unix.PollFd) (err unix.Errno)
 TEXT ·pollBlock(SB),NOSPLIT,$0-8
 	BL  	runtime·entersyscallblock(SB)	// Call blocking SYSCALL directive from runtime package
 	MOVW	$SYS__PPOLL, R7			// Prepare / perform ppoll() SYSCALL    

@@ -5,7 +5,6 @@ package event
 
 import (
 	"errors"
-	"syscall"
 	"testing"
 	"time"
 
@@ -57,13 +56,13 @@ func TestPollOnClosedFD(t *testing.T) {
 
 	efdHasEvent, errno := handler.Poll(unix.POLLIN | unix.POLLERR)
 	require.True(t, efdHasEvent)
-	require.Equal(t, syscall.Errno(0x0), errno)
+	require.Equal(t, unix.Errno(0x0), errno)
 	_, err = handler.Efd.ReadEvent()
 	require.Nil(t, err)
 
 	for i := 0; i < 10; i++ {
 		efdHasEvent, errno := handler.Poll(unix.POLLIN | unix.POLLERR)
 		require.False(t, efdHasEvent)
-		require.Equal(t, syscall.Errno(0x9), errno)
+		require.Equal(t, unix.Errno(0x9), errno)
 	}
 }

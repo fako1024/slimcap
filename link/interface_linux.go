@@ -10,7 +10,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -60,7 +61,7 @@ func (i Interface) IsUp() (bool, error) {
 		return false, err
 	}
 
-	return flags&syscall.IFF_UP != 0, nil
+	return flags&unix.IFF_UP != 0, nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////

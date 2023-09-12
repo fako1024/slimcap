@@ -9,12 +9,12 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 
 	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/capture/afpacket/afpacket"
 	"github.com/fako1024/slimcap/capture/afpacket/afring"
 	"github.com/fako1024/slimcap/link"
+	"golang.org/x/sys/unix"
 )
 
 // Capture denotes a simple capturing structure / manager
@@ -163,7 +163,7 @@ func (c *Capture) Run() (err error) {
 	logger.Infof("attempting capture on interfaces [%s]", strings.Join(capturing, ","))
 
 	sigExitChan := make(chan os.Signal, 1)
-	signal.Notify(sigExitChan, syscall.SIGTERM, os.Interrupt)
+	signal.Notify(sigExitChan, unix.SIGTERM, os.Interrupt)
 
 	var listeners []capture.Source
 	// Fork a goroutine for each interface
