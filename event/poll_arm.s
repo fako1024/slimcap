@@ -1,3 +1,5 @@
+// +build !slimcap_noasm
+
 #include "textflag.h"
 
 #define SYS__PPOLL 0x150

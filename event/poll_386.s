@@ -1,3 +1,5 @@
+// +build !slimcap_noasm
+
 #include "textflag.h"
 
 #define INVOKE_SYSCALL INT $0x80

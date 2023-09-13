@@ -1,5 +1,6 @@
-//go:build (linux && amd64) || (linux && arm64) || (linux && arm) || (linux && 386)
+//go:build ((linux && amd64) || (linux && arm64) || (linux && arm) || (linux && 386)) && !slimcap_noasm
 // +build linux,amd64 linux,arm64 linux,arm linux,386
+// +build !slimcap_noasm
 
 package event
 
