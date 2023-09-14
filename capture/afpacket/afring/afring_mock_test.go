@@ -499,6 +499,8 @@ func BenchmarkCaptureMethods(b *testing.B) {
 				})
 			}
 		})
+
+		require.Nil(b, mockSrc.Close())
 	}
 }
 
