@@ -385,15 +385,19 @@ func BenchmarkCaptureMethods(b *testing.B) {
 		6, []byte{1, 2}, 0, 128)
 	require.Nil(b, err)
 
-	for _, bufSize := range [][2]int{
-		{10 * 1024, 512},
-		{10 * 1024 * 1024, 4},
+	for _, benchConfig := range []struct {
+		blockSize   int
+		nBlocks     int
+		blockExpiry time.Duration
+	}{
+		{10 * 1024 * 1024, 4, time.Microsecond},
+		{10 * 1024, 512, 10 * time.Nanosecond},
 	} {
 
 		// Setup a mock source
 		mockSrc, err := NewMockSourceNoDrain("mock",
 			CaptureLength(link.CaptureLengthMinimalIPv4Transport),
-			BufferSize(bufSize[0], bufSize[1]),
+			BufferSize(benchConfig.blockSize, benchConfig.nBlocks),
 			Promiscuous(false),
 		)
 		require.Nil(b, err)
@@ -401,10 +405,10 @@ func BenchmarkCaptureMethods(b *testing.B) {
 		for mockSrc.CanAddPackets() {
 			require.Nil(b, mockSrc.AddPacket(testPacket))
 		}
-		_, err = mockSrc.Run(time.Microsecond)
+		_, err = mockSrc.Run(benchConfig.blockExpiry)
 		require.Nil(b, err)
 
-		b.Run(fmt.Sprintf("NextPacket_%dkiBx%d", bufSize[0]/1000, bufSize[1]), func(b *testing.B) {
+		b.Run(fmt.Sprintf("NextPacket_%dkiBx%d", benchConfig.blockSize/1000, benchConfig.nBlocks), func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				p, _ := mockSrc.NextPacket(nil)
@@ -412,7 +416,7 @@ func BenchmarkCaptureMethods(b *testing.B) {
 			}
 		})
 
-		b.Run(fmt.Sprintf("NextPacketInPlace_%dkiBx%d", bufSize[0]/1000, bufSize[1]), func(b *testing.B) {
+		b.Run(fmt.Sprintf("NextPacketInPlace_%dkiBx%d", benchConfig.blockSize/1000, benchConfig.nBlocks), func(b *testing.B) {
 			var p capture.Packet = mockSrc.NewPacket()
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -422,7 +426,7 @@ func BenchmarkCaptureMethods(b *testing.B) {
 			}
 		})
 
-		b.Run(fmt.Sprintf("NextPayload_%dkiBx%d", bufSize[0]/1000, bufSize[1]), func(b *testing.B) {
+		b.Run(fmt.Sprintf("NextPayload_%dkiBx%d", benchConfig.blockSize/1000, benchConfig.nBlocks), func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				p, pktType, totalLen, _ := mockSrc.NextPayload(nil)
@@ -432,7 +436,7 @@ func BenchmarkCaptureMethods(b *testing.B) {
 			}
 		})
 
-		b.Run(fmt.Sprintf("NextPayloadInPlace_%dkiBx%d", bufSize[0]/1000, bufSize[1]), func(b *testing.B) {
+		b.Run(fmt.Sprintf("NextPayloadInPlace_%dkiBx%d", benchConfig.blockSize/1000, benchConfig.nBlocks), func(b *testing.B) {
 			pkt := mockSrc.NewPacket()
 			var p []byte = pkt.Payload()
 			b.ReportAllocs()
@@ -445,7 +449,7 @@ func BenchmarkCaptureMethods(b *testing.B) {
 			}
 		})
 
-		b.Run(fmt.Sprintf("NextPayloadZeroCopy_%dkiBx%d", bufSize[0]/1000, bufSize[1]), func(b *testing.B) {
+		b.Run(fmt.Sprintf("NextPayloadZeroCopy_%dkiBx%d", benchConfig.blockSize/1000, benchConfig.nBlocks), func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				p, pktType, totalLen, _ := mockSrc.NextPayloadZeroCopy()
@@ -455,7 +459,7 @@ func BenchmarkCaptureMethods(b *testing.B) {
 			}
 		})
 
-		b.Run(fmt.Sprintf("NextIPPacket_%dkiBx%d", bufSize[0]/1000, bufSize[1]), func(b *testing.B) {
+		b.Run(fmt.Sprintf("NextIPPacket_%dkiBx%d", benchConfig.blockSize/1000, benchConfig.nBlocks), func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				p, pktType, totalLen, _ := mockSrc.NextIPPacket(nil)
@@ -465,7 +469,7 @@ func BenchmarkCaptureMethods(b *testing.B) {
 			}
 		})
 
-		b.Run(fmt.Sprintf("NextIPPacketInPlace_%dkiBx%d", bufSize[0]/1000, bufSize[1]), func(b *testing.B) {
+		b.Run(fmt.Sprintf("NextIPPacketInPlace_%dkiBx%d", benchConfig.blockSize/1000, benchConfig.nBlocks), func(b *testing.B) {
 			pkt := mockSrc.NewPacket()
 			var p capture.IPLayer = pkt.IPLayer()
 			b.ReportAllocs()
@@ -478,7 +482,7 @@ func BenchmarkCaptureMethods(b *testing.B) {
 			}
 		})
 
-		b.Run(fmt.Sprintf("NextIPPacketZeroCopy_%dkiBx%d", bufSize[0]/1000, bufSize[1]), func(b *testing.B) {
+		b.Run(fmt.Sprintf("NextIPPacketZeroCopy_%dkiBx%d", benchConfig.blockSize/1000, benchConfig.nBlocks), func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				p, pktType, totalLen, _ := mockSrc.NextIPPacketZeroCopy()
@@ -488,7 +492,7 @@ func BenchmarkCaptureMethods(b *testing.B) {
 			}
 		})
 
-		b.Run(fmt.Sprintf("NextPacketFn_%dkiBx%d", bufSize[0]/1000, bufSize[1]), func(b *testing.B) {
+		b.Run(fmt.Sprintf("NextPacketFn_%dkiBx%d", benchConfig.blockSize/1000, benchConfig.nBlocks), func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				_ = mockSrc.NextPacketFn(func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte) error {
