@@ -268,8 +268,8 @@ func (s *Source) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType c
 	pos := pktHdr.ppos + uint32(hdr.pktMac)
 
 	// #nosec G103
-	return fn(pktHdr.data[pos:pos+*(*uint32)(unsafe.Pointer(&pktHdr.data[pktHdr.ppos+12]))],
-		*(*uint32)(unsafe.Pointer(&pktHdr.data[pktHdr.ppos+16])),
+	return fn(unsafe.Slice(&pktHdr.data[pos], hdr.snaplen),
+		hdr.pktLen,
 		pktHdr.data[pktHdr.ppos+58],
 		s.ipLayerOffset)
 }
