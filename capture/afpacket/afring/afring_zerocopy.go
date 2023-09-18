@@ -94,7 +94,7 @@ finalize:
 // Procedurally, the method extracts the next packet from either the current block or advances to the next
 // one (fetching / returning its first packet). Using the offset parameter it supports extraction of
 // both the full payload or the IP layer only.
-func (s *Source) NextIPPacketZeroCopy() (ipLayer []byte, pktType capture.PacketType, pktLen uint32, err error) {
+func (s *Source) NextIPPacketZeroCopy() (ipLayer capture.IPLayer, pktType capture.PacketType, pktLen uint32, err error) {
 
 retry:
 	pktHdr := s.curTPacketHeader
