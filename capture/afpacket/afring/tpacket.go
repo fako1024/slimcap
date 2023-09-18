@@ -8,7 +8,6 @@ import (
 	"math"
 	"unsafe"
 
-	"github.com/fako1024/slimcap/capture"
 	"golang.org/x/sys/unix"
 )
 
@@ -98,12 +97,11 @@ type tPacketHeader struct {
 // Note: The struct parses only the relevant portions of the header, the rest is
 // skipped / ignored by means of dummy elements of the correct in-memory size
 type tPacketHeaderV3 struct {
-	snaplen uint32     // 12-16
-	pktLen  uint32     // 16-20
-	_       uint32     // skip
-	pktPos  uint16     // 24-26
-	_       [16]uint16 // skip
-	pktType byte       // 58
+	snaplen uint32 // 12-16
+	pktLen  uint32 // 16-20
+	_       uint32 // skip
+	pktMac  uint16 // 24-26
+	pktNet  uint16 // 26-28
 }
 
 func (t tPacketHeader) offsetToFirstPkt() uint32 {
@@ -114,74 +112,12 @@ func (t tPacketHeader) nextOffset() uint32 {
 	return *(*uint32)(unsafe.Pointer(&t.data[t.ppos])) // #nosec G103
 }
 
-func (t tPacketHeader) pktLenPut(data []byte) {
+func (t tPacketHeader) pktLenCopy(data []byte) {
 	copy(data, t.data[t.ppos+16:t.ppos+20])
 }
 
-func (t tPacketHeader) packetType() byte {
-	return t.data[t.ppos+58]
-}
-
-func (t tPacketHeader) payloadZeroCopy(offset uint32) ([]byte, byte, uint32) {
-
-	// Parse the V3 TPacketHeader and the first byte of the payload
-	hdr := (*tPacketHeaderV3)(unsafe.Pointer(&t.data[t.ppos+12])) // #nosec G103
-	pos := t.ppos + offset + uint32(hdr.pktPos)
-
-	// Return the payload / IP layer subslice & heeader parameters
-	return t.data[pos : pos+hdr.snaplen],
-		hdr.pktType,
-		hdr.pktLen
-}
-
-func (t tPacketHeader) packetPut(data capture.Packet, ipLayerOffset byte) capture.Packet {
-
-	// Parse the V3 TPacketHeader, the first byte of the payload and snaplen
-	hdr := (*tPacketHeaderV3)(unsafe.Pointer(&t.data[t.ppos+12])) // #nosec G103
-	pos := t.ppos + uint32(hdr.pktPos)
-	snapLen := int(hdr.snaplen)
-
-	// Allocate new capture.Packet if no buffer was provided
-	if data == nil {
-		data = make(capture.Packet, capture.PacketHdrOffset+snapLen)
-	}
-
-	// Extract / copy all required data / header parameters
-	t.pktLenPut(data[2:6])
-	data[0] = hdr.pktType
-	data[1] = ipLayerOffset
-	copy(data[6:], t.data[pos:pos+hdr.snaplen])
-
-	// Ensure correct packet length
-	if snapLen+capture.PacketHdrOffset < len(data) {
-		data = data[:capture.PacketHdrOffset+snapLen]
-	}
-
-	return data
-}
-
-func (t tPacketHeader) payloadPut(data []byte, offset uint32) ([]byte, capture.PacketType, uint32) {
-
-	// Parse the V3 TPacketHeader, the first byte of the payload and snaplen
-	hdr := (*tPacketHeaderV3)(unsafe.Pointer(&t.data[t.ppos+12])) // #nosec G103
-	pos := t.ppos + offset + uint32(hdr.pktPos)
-	snapLen := int(hdr.snaplen)
-
-	// Allocate new payload / IP layer if no buffer was provided
-	if data == nil {
-		data = make([]byte, snapLen)
-	}
-
-	// Copy payload / IP layer
-	copy(data, t.data[pos:pos+hdr.snaplen])
-
-	// Ensure correct data length
-	if effectiveSnapLen := snapLen - int(offset); effectiveSnapLen < len(data) {
-		data = data[:effectiveSnapLen]
-	}
-
-	// Return payload / IP layer & header parameters
-	return data, hdr.pktType, hdr.pktLen
+func (t tPacketHeader) parseHeader() *tPacketHeaderV3 {
+	return (*tPacketHeaderV3)(unsafe.Pointer(&t.data[t.ppos+12])) // #nosec G103
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
