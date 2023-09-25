@@ -10,8 +10,7 @@ import (
 // NextPayloadZeroCopy receives the raw payload of the next packet from the source and returns it. The operation is blocking.
 // The returned payload provides direct zero-copy access to the underlying data source (e.g. a ring buffer).
 // Procedurally, the method extracts the next packet from either the current block or advances to the next
-// one (fetching / returning its first packet). Using the offset parameter it supports extraction of
-// both the full payload or the IP layer only.
+// one (fetching / returning its first packet).
 func (s *Source) NextPayloadZeroCopy() (payload []byte, pktType capture.PacketType, pktLen uint32, err error) {
 
 retry:
@@ -92,8 +91,7 @@ finalize:
 // NextIPPacketZeroCopy receives the IP layer of the next packet from the source and returns it. The operation is blocking.
 // The returned IPLayer provides direct zero-copy access to the underlying data source (e.g. a ring buffer).
 // Procedurally, the method extracts the next packet from either the current block or advances to the next
-// one (fetching / returning its first packet). Using the offset parameter it supports extraction of
-// both the full payload or the IP layer only.
+// one (fetching / returning its first packet IP layer).
 func (s *Source) NextIPPacketZeroCopy() (ipLayer capture.IPLayer, pktType capture.PacketType, pktLen uint32, err error) {
 
 retry:
