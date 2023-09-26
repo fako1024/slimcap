@@ -86,56 +86,41 @@ func (t tPacketRequest) blockSizeNr() int {
 	return int(t.blockSize * t.blockNr)
 }
 
-// tPacketHeader denotes the V3 tpacket_hdr structure, c.f.
-// https://github.com/torvalds/linux/blob/master/include/uapi/linux/if_packet.h
+// tPacketHeader denotes a wrapper around the raw data of a TPacket block structure
 type tPacketHeader struct {
-	data      []byte
-	ppos      uint32
-	nPktsLeft uint32
+	data []byte
+	ppos uint32
 }
 
-func (t tPacketHeader) nPkts() uint32 {
-	return *(*uint32)(unsafe.Pointer(&t.data[12])) // #nosec G103
+// tPacketHeaderV3 denotes the V3 tpacket_hdr structure, c.f.
+// https://github.com/torvalds/linux/blob/master/include/uapi/linux/if_packet.h
+// Note: The struct parses only the relevant portions of the header, the rest is
+// skipped / ignored by means of dummy elements of the correct in-memory size
+type tPacketHeaderV3 struct {
+	snaplen uint32 // 12-16
+	pktLen  uint32 // 16-20
+	_       uint32 // skip
+	pktMac  uint16 // 24-26
+	pktNet  uint16 // 26-28
 }
 
 func (t tPacketHeader) offsetToFirstPkt() uint32 {
 	return *(*uint32)(unsafe.Pointer(&t.data[16])) // #nosec G103
 }
 
-// 2 * 3 * uint32 for timestamps
-
-// / -> Packet Header
 func (t tPacketHeader) nextOffset() uint32 {
 	return *(*uint32)(unsafe.Pointer(&t.data[t.ppos])) // #nosec G103
 }
 
-// 2 * uint32 for timestamps
-
-func (t tPacketHeader) snapLen() uint32 {
-	return *(*uint32)(unsafe.Pointer(&t.data[t.ppos+12])) // #nosec G103
-}
-
-func (t tPacketHeader) pktLen() uint32 {
-	return *(*uint32)(unsafe.Pointer(&t.data[t.ppos+16])) // #nosec G103
-}
-
-func (t tPacketHeader) pktLenPut(data []byte) {
+func (t tPacketHeader) pktLenCopy(data []byte) {
 	copy(data, t.data[t.ppos+16:t.ppos+20])
 }
 
-func (t tPacketHeader) packetType() byte {
-	return t.data[t.ppos+58]
+func (t tPacketHeader) parseHeader() *tPacketHeaderV3 {
+	return (*tPacketHeaderV3)(unsafe.Pointer(&t.data[t.ppos+12])) // #nosec G103
 }
 
-func (t tPacketHeader) payloadNoCopyAtOffset(offset, to uint32) []byte {
-	pos := t.ppos + uint32(*(*uint16)(unsafe.Pointer(&t.data[t.ppos+24]))) // #nosec G103
-	return t.data[pos+offset : pos+to]
-}
-
-func (t tPacketHeader) payloadCopyPutAtOffset(data []byte, offset, to uint32) {
-	pos := t.ppos + uint32(*(*uint16)(unsafe.Pointer(&t.data[t.ppos+24]))) // #nosec G103
-	copy(data, t.data[pos+offset:pos+to])
-}
+//////////////////////////////////////////////////////////////////////////////////////////////////
 
 func pageSizeAlign(x int) int {
 	return int((uint(x) + pageSizeAlignment - 1) &^ (pageSizeAlignment - 1))
@@ -180,6 +165,18 @@ func blockSizeTPacketAlign(x, blockSize int) (int, error) {
 // 	return *(*uint32)(unsafe.Pointer(&t.data[4]))
 // }
 
+// func (t tPacketHeader) nPkts() uint32 {
+// 	return *(*uint32)(unsafe.Pointer(&t.data[12])) // #nosec G103
+// }
+
+// func (t tPacketHeader) snapLen() uint32 {
+// 	return *(*uint32)(unsafe.Pointer(&t.data[t.ppos+12])) // #nosec G103
+// }
+
+// func (t tPacketHeader) pktLen() uint32 {
+// 	return *(*uint32)(unsafe.Pointer(&t.data[t.ppos+16])) // #nosec G103
+// }
+
 // func (t tPacketHeader) blockLen() uint32 {
 // 	return *(*uint32)(unsafe.Pointer(&t.data[20]))
 // }
@@ -203,4 +200,14 @@ func blockSizeTPacketAlign(x, blockSize int) (int, error) {
 
 // func (t tPacketHeader) net() uint16 {
 // 	return *(*uint16)(unsafe.Pointer(&t.data[t.ppos+26]))
+// }
+
+// func (t tPacketHeader) payloadNoCopyAtOffset(offset, to uint32) []byte {
+// 	pos := t.ppos + uint32(*(*uint16)(unsafe.Pointer(&t.data[t.ppos+24]))) // #nosec G103
+// 	return t.data[pos+offset : pos+to]
+// }
+
+// func (t tPacketHeader) payloadCopyPutAtOffset(data []byte, offset, to uint32) {
+// 	pos := t.ppos + uint32(*(*uint16)(unsafe.Pointer(&t.data[t.ppos+24]))) // #nosec G103
+// 	copy(data, t.data[pos+offset:pos+to])
 // }

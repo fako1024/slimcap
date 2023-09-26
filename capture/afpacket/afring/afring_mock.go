@@ -22,6 +22,16 @@ const (
 	blockStatusPollInterval = 10 * time.Millisecond
 )
 
+type tPacketHeaderV3Mock struct {
+	snaplen uint32     // 12-16
+	pktLen  uint32     // 16-20
+	_       uint32     // skip
+	pktMac  uint16     // 24-26
+	pktNet  uint16     // 26-28
+	_       [15]uint16 // skip
+	pktType byte       // 58
+}
+
 // MockSource denotes a fully mocked ring buffer source, behaving just like one
 // Since it wraps a regular Source, it can be used as a stand-in replacement without any further
 // code modifications:
@@ -62,6 +72,7 @@ func NewMockSource(_ string, options ...Option) (*MockSource, error) {
 		},
 		eventHandler: mockHandler,
 	}
+	src.ipLayerOffsetNum = uint32(src.ipLayerOffset)
 
 	for _, opt := range options {
 		opt(src)
@@ -129,11 +140,14 @@ func (m *MockSource) addPacket(payload []byte, totalLen uint32, pktType, ipLayer
 
 	block := m.ringBuffer.ring[thisBlock*m.blockSize : thisBlock*m.blockSize+m.blockSize]
 
-	*(*uint32)(unsafe.Pointer(&block[m.curBlockPos+12])) = uint32(m.snapLen) // #nosec: G103 // snapLen
-	*(*uint32)(unsafe.Pointer(&block[m.curBlockPos+16])) = totalLen          // #nosec: G103 // totalLen
-	*(*uint32)(unsafe.Pointer(&block[m.curBlockPos+24])) = uint32(mac)       // #nosec: G103 // mac
-	block[m.curBlockPos+58] = pktType                                        // pktType
-	copy(block[m.curBlockPos+mac:m.curBlockPos+mac+m.snapLen], payload)      // payload
+	*(*tPacketHeaderV3Mock)(unsafe.Pointer(&block[m.curBlockPos+12])) = tPacketHeaderV3Mock{
+		snaplen: uint32(m.snapLen),
+		pktLen:  totalLen,
+		pktMac:  mac,
+		pktNet:  mac + uint16(m.ipLayerOffset),
+		pktType: pktType,
+	} // #nosec: G103
+	copy(block[m.curBlockPos+mac:m.curBlockPos+mac+m.snapLen], payload) // payload
 
 	// Ensure that there is no "stray" nextOffset set from a previous perusal of this ring buffer block which
 	// might remain in case the block is finalized

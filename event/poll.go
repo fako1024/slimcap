@@ -9,7 +9,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const nPollEvents = 2
+const (
+	eventPollIn    = unix.POLLIN
+	eventConnReset = unix.POLLHUP | unix.POLLERR
+)
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
@@ -28,17 +31,4 @@ func (p *Handler) recvfrom(buf []byte, flags int) (int, uint8, error) {
 	}
 
 	return n, pktType, nil
-}
-
-func poll(pollEvents [nPollEvents]unix.PollFd) (bool, unix.Errno) {
-	errno := pollBlock(&pollEvents[0], nPollEvents)
-	if errno != 0 {
-		return pollEvents[0].Revents&unix.POLLIN != 0, errno
-	}
-
-	if pollEvents[1].Revents&unix.POLLHUP != 0 || pollEvents[1].Revents&unix.POLLERR != 0 {
-		errno = unix.ECONNRESET
-	}
-
-	return pollEvents[0].Revents&unix.POLLIN != 0, errno
 }

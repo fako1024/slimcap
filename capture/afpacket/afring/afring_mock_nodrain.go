@@ -5,6 +5,7 @@ package afring
 
 import (
 	"errors"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -68,6 +69,8 @@ func (m *MockSourceNoDrain) Run(releaseInterval time.Duration) (<-chan error, er
 	m.wgRunning.Add(1)
 	go func(errs chan error) {
 
+		// Minimize scheduler overhead by locking this goroutine to the current thread
+		runtime.LockOSThread()
 		defer func() {
 			close(errs)
 			m.wgRunning.Done()

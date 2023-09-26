@@ -28,18 +28,6 @@ const (
 	DefaultSnapLen = (1 << 16) // DefaultSnapLen : 64 kiB
 )
 
-type ringBuffer struct {
-	ring []byte
-
-	tpReq            tPacketRequest
-	curTPacketHeader *tPacketHeader
-	offset           int
-}
-
-func (b *ringBuffer) nextTPacketHeader() {
-	b.curTPacketHeader.data = b.ring[b.offset*int(b.tpReq.blockSize):]
-}
-
 // Source denotes an AF_PACKET capture source making use of a ring buffer
 type Source struct {
 	eventHandler *event.Handler
@@ -50,7 +38,8 @@ type Source struct {
 	isPromisc          bool
 	link               *link.Link
 
-	unblocked bool
+	ipLayerOffsetNum uint32
+	filter           byte
 
 	ringBuffer
 	sync.Mutex
@@ -87,7 +76,9 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 		nBlocks:       tPacketDefaultBlockNr,
 		ipLayerOffset: link.Type.IPHeaderOffset(),
 		link:          link,
+		filter:        link.FilterMask(),
 	}
+	src.ipLayerOffsetNum = uint32(src.ipLayerOffset)
 
 	for _, opt := range options {
 		opt(src)
@@ -139,121 +130,126 @@ func (s *Source) NewPacket() capture.Packet {
 // NextPacket receives the next packet from the source and returns it. The operation is blocking. In
 // case a non-nil "buffer" Packet is provided it will be populated with the data (and returned). The
 // buffer packet can be reused. Otherwise a new Packet is allocated.
-func (s *Source) NextPacket(pBuf capture.Packet) (capture.Packet, error) {
+func (s *Source) NextPacket(pBuf capture.Packet) (pkt capture.Packet, err error) {
 
-	if err := s.nextPacket(); err != nil {
-		return nil, err
+	if err = s.nextPacket(); err != nil {
+		return
 	}
-	var (
-		data    capture.Packet
-		snapLen = int(s.curTPacketHeader.snapLen())
-	)
 
-	// If a buffer was provided, et the correct length of the buffer and populate it
-	// Otherwise, allocate a new Packet
-	if pBuf != nil {
-		data = pBuf[:cap(pBuf)]
+	pktHdr := s.curTPacketHeader
+
+	// Parse the V3 TPacketHeader, the first byte of the payload and snaplen
+	hdr := pktHdr.parseHeader()
+	pos := pktHdr.ppos + uint32(hdr.pktMac)
+	effectiveSnapLen := capture.PacketHdrOffset + int(hdr.snaplen)
+
+	// If a buffer was provided, extend it to maximum capacity
+	if pBuf == nil {
+
+		// Allocate new capture.Packet if no buffer was provided
+		pkt = make(capture.Packet, effectiveSnapLen)
 	} else {
-		data = make(capture.Packet, capture.PacketHdrOffset+snapLen)
+		pkt = pBuf[:cap(pBuf)]
 	}
 
-	// Populate the packet
-	data[0] = s.curTPacketHeader.packetType()
-	data[1] = s.ipLayerOffset
-	s.curTPacketHeader.pktLenPut(data[2:6])
-	s.curTPacketHeader.payloadCopyPutAtOffset(data[6:], 0, uint32(snapLen))
-	if snapLen+capture.PacketHdrOffset < len(data) {
-		data = data[:capture.PacketHdrOffset+snapLen]
+	// Extract / copy all required data / header parameters
+	pktHdr.pktLenCopy(pkt[2:capture.PacketHdrOffset])
+	pkt[0] = pktHdr.data[pktHdr.ppos+58]
+	pkt[1] = s.ipLayerOffset
+	copy(pkt[capture.PacketHdrOffset:], pktHdr.data[pos:pos+hdr.snaplen])
+
+	// Ensure correct packet length
+	if effectiveSnapLen < len(pkt) {
+		pkt = pkt[:effectiveSnapLen]
 	}
 
-	return data, nil
+	return
 }
 
 // NextPayload receives the raw payload of the next packet from the source and returns it. The operation is blocking.
 // In case a non-nil "buffer" byte slice / payload is provided it will be populated with the data (and returned).
 // The buffer can be reused. Otherwise a new byte slice / payload is allocated.
-func (s *Source) NextPayload(pBuf []byte) ([]byte, capture.PacketType, uint32, error) {
+func (s *Source) NextPayload(pBuf []byte) (payload []byte, pktType capture.PacketType, pktLen uint32, err error) {
 
-	if err := s.nextPacket(); err != nil {
-		return nil, capture.PacketUnknown, 0, err
+	if err = s.nextPacket(); err != nil {
+		pktType = capture.PacketUnknown
+		return
 	}
-	var (
-		data    []byte
-		snapLen = s.curTPacketHeader.snapLen()
-	)
 
-	// If a buffer was provided, et the correct length of the buffer and populate it
-	// Otherwise, allocate a new byte slice - then populate the packet
+	pktHdr := s.curTPacketHeader
+
+	// Parse the V3 TPacketHeader, the first byte of the payload and snaplen
+	hdr := pktHdr.parseHeader()
+	pos := pktHdr.ppos + uint32(hdr.pktMac)
+	snapLen := int(hdr.snaplen)
+
+	// If a buffer was provided, extend it to maximum capacity
 	if pBuf != nil {
-		data = s.curTPacketHeader.payloadNoCopyAtOffset(0, snapLen)
+		payload = pBuf[:cap(pBuf)]
 	} else {
-		data = make([]byte, snapLen)
-		s.curTPacketHeader.payloadCopyPutAtOffset(data, 0, snapLen)
+
+		// Allocate new capture.Packet if no buffer was provided
+		payload = make([]byte, snapLen)
 	}
 
-	if int(snapLen) < len(data) {
-		data = data[:snapLen]
+	// Copy payload / IP layer
+	copy(payload, pktHdr.data[pos:pos+hdr.snaplen])
+
+	// Ensure correct data length
+	if snapLen < len(payload) {
+		payload = payload[:snapLen]
 	}
 
-	return data, s.curTPacketHeader.packetType(), s.curTPacketHeader.pktLen(), nil
-}
+	// Populate the payload / buffer & parameters
+	pktType, pktLen = pktHdr.data[pktHdr.ppos+58], hdr.pktLen
 
-// NextPayloadZeroCopy receives the raw payload of the next packet from the source and returns it. The operation is blocking.
-// The returned payload provides direct zero-copy access to the underlying data source (e.g. a ring buffer).
-func (s *Source) NextPayloadZeroCopy() ([]byte, capture.PacketType, uint32, error) {
-
-	if err := s.nextPacket(); err != nil {
-		return nil, capture.PacketUnknown, 0, err
-	}
-
-	return s.curTPacketHeader.payloadNoCopyAtOffset(0, s.curTPacketHeader.snapLen()),
-		s.curTPacketHeader.packetType(),
-		s.curTPacketHeader.pktLen(),
-		nil
+	return
 }
 
 // NextIPPacket receives the IP layer of the next packet from the source and returns it. The operation is blocking.
 // In case a non-nil "buffer" IPLayer is provided it will be populated with the data (and returned).
 // The buffer can be reused. Otherwise a new IPLayer is allocated.
-func (s *Source) NextIPPacket(pBuf capture.IPLayer) (capture.IPLayer, capture.PacketType, uint32, error) {
+func (s *Source) NextIPPacket(pBuf capture.IPLayer) (ipLayer capture.IPLayer, pktType capture.PacketType, pktLen uint32, err error) {
 
-	if err := s.nextPacket(); err != nil {
-		return nil, capture.PacketUnknown, 0, err
+	if err = s.nextPacket(); err != nil {
+		pktType = capture.PacketUnknown
+		return
 	}
-	var (
-		data    capture.IPLayer
-		snapLen = s.curTPacketHeader.snapLen()
-	)
 
-	// If a buffer was provided, et the correct length of the buffer and populate it
-	// Otherwise, allocate a new IPLayer
+	pktHdr := s.curTPacketHeader
+
+	// Parse the V3 TPacketHeader and the first byte of the payload
+	hdr := pktHdr.parseHeader()
+	pos := pktHdr.ppos + uint32(hdr.pktNet)
+
+	// Adjust effective snaplen (subtracting any potential mac layer)
+	effectiveSnapLen := hdr.snaplen
+	if s.ipLayerOffsetNum > 0 {
+		effectiveSnapLen -= s.ipLayerOffsetNum
+	}
+	snapLen := int(effectiveSnapLen)
+
+	// If a buffer was provided, extend it to maximum capacity
 	if pBuf != nil {
-		data = pBuf[:cap(pBuf)]
+		ipLayer = pBuf[:cap(pBuf)]
 	} else {
-		data = make(capture.IPLayer, snapLen)
+
+		// Allocate new capture.Packet if no buffer was provided
+		ipLayer = make([]byte, snapLen)
 	}
 
-	// Populate the packet
-	s.curTPacketHeader.payloadCopyPutAtOffset(data, uint32(s.ipLayerOffset), snapLen)
-	if ipLayerSnaplen := snapLen - uint32(s.ipLayerOffset); int(ipLayerSnaplen) < len(data) {
-		data = data[:ipLayerSnaplen]
+	// Copy payload / IP layer
+	copy(ipLayer, pktHdr.data[pos:pos+effectiveSnapLen])
+
+	// Ensure correct data length
+	if snapLen < len(ipLayer) {
+		ipLayer = ipLayer[:snapLen]
 	}
 
-	return data, s.curTPacketHeader.packetType(), s.curTPacketHeader.pktLen(), nil
-}
+	// Populate the payload / buffer & parameters
+	pktType, pktLen = pktHdr.data[pktHdr.ppos+58], hdr.pktLen
 
-// NextIPPacketZeroCopy receives the IP layer of the next packet from the source and returns it. The operation is blocking.
-// The returned IPLayer provides direct zero-copy access to the underlying data source (e.g. a ring buffer).
-func (s *Source) NextIPPacketZeroCopy() (capture.IPLayer, capture.PacketType, uint32, error) {
-
-	if err := s.nextPacket(); err != nil {
-		return nil, capture.PacketUnknown, 0, err
-	}
-
-	return s.curTPacketHeader.payloadNoCopyAtOffset(uint32(s.ipLayerOffset), s.curTPacketHeader.snapLen()),
-		s.curTPacketHeader.packetType(),
-		s.curTPacketHeader.pktLen(),
-		nil
+	return
 }
 
 // NextPacketFn executes the provided function on the next packet received on the source. If possible, the
@@ -265,9 +261,16 @@ func (s *Source) NextPacketFn(fn func(payload []byte, totalLen uint32, pktType c
 		return err
 	}
 
-	return fn(s.curTPacketHeader.payloadNoCopyAtOffset(0, s.curTPacketHeader.snapLen()),
-		s.curTPacketHeader.pktLen(),
-		s.curTPacketHeader.packetType(),
+	pktHdr := s.curTPacketHeader
+
+	// Parse the V3 TPacketHeader and the first byte of the payload
+	hdr := pktHdr.parseHeader()
+	pos := pktHdr.ppos + uint32(hdr.pktMac)
+
+	// #nosec G103
+	return fn(unsafe.Slice(&pktHdr.data[pos], hdr.snaplen),
+		hdr.pktLen,
+		pktHdr.data[pktHdr.ppos+58],
 		s.ipLayerOffset)
 }
 
@@ -329,77 +332,70 @@ func (s *Source) Link() *link.Link {
 	return s.link
 }
 
+// nextPacket provides access to the next packet from either the current block or advances to the next
+// one (fetching its first packet).
 func (s *Source) nextPacket() error {
 
-	// If the current TPacketHeader does not contain any more packets (or is uninitialized)
-	// fetch a new one from the ring buffer
-fetch:
-	if s.curTPacketHeader.data == nil || s.unblocked {
-		if !s.unblocked {
-			s.nextTPacketHeader()
-		}
-		for s.curTPacketHeader.getStatus()&unix.TP_STATUS_USER == 0 || s.unblocked {
+retry:
+	pktHdr := s.curTPacketHeader
 
-			// Unset the bypass marker
-			if s.unblocked {
-				s.unblocked = false
-			}
+	// If there is an active block, attempt to simply consume a packet from it
+	if pktHdr.data != nil {
 
-			// Run a PPOLL on the file descriptor, fetching a new block into the ring buffer
-			efdHasEvent, errno := s.eventHandler.Poll(unix.POLLIN | unix.POLLERR)
+		// If there are more packets remaining (i.e. there is a non-zero next offset), advance
+		// the current position.
+		// According to https://github.com/torvalds/linux/blame/master/net/packet/af_packet.c#L811 the
+		// tp_next_offset field is guaranteed to be zero for the final packet of the block. In addition,
+		// it cannot be zero otherwise (because that would be an invalid block).
+		if nextPos := pktHdr.nextOffset(); nextPos != 0 {
 
-			// If an event was received, ensure that the respective error is returned
-			// immediately (setting the `unblocked` marker to bypass checks done before
-			// upon next entry into this method)
-			if efdHasEvent {
-				return s.handleEvent()
-			}
-
-			// Handle errors
-			if errno != 0 {
-				if errno == unix.EINTR {
-					continue
-				}
-				if errno == unix.EBADF {
-					return capture.ErrCaptureStopped
-				}
-				return fmt.Errorf("error polling for next packet: %w (errno %d)", errno, int(errno))
-			}
-
-			// Handle rare cases of runaway packets
-			if s.curTPacketHeader.getStatus()&unix.TP_STATUS_COPY != 0 {
-				s.curTPacketHeader.setStatus(unix.TP_STATUS_KERNEL)
-				s.offset = (s.offset + 1) % int(s.tpReq.blockNr)
-				s.nextTPacketHeader()
-
-				continue
-			}
+			// Update position of next packet and jump to the end
+			pktHdr.ppos += nextPos
+			goto finalize
 		}
 
-		// After fetching a new TPacketHeader, set the position of the first packet and the number of packets
-		// in this TPacketHeader
-		s.curTPacketHeader.ppos = s.curTPacketHeader.offsetToFirstPkt()
-		s.curTPacketHeader.nPktsLeft = s.curTPacketHeader.nPkts()
-	} else {
-
-		// If there is no next offset, release the TPacketHeader to the kernel and fetch a new one
-		nextPos := s.curTPacketHeader.nextOffset()
-		if s.curTPacketHeader.nPktsLeft == 0 {
-			s.curTPacketHeader.setStatus(unix.TP_STATUS_KERNEL)
-			s.offset = (s.offset + 1) % int(s.tpReq.blockNr)
-			s.curTPacketHeader.data = nil
-			goto fetch
-		}
-
-		// Update position of next packet
-		s.curTPacketHeader.ppos += nextPos
+		// If there is no next offset, release the TPacketHeader to the kernel and move on to the next block
+		s.releaseAndAdvance()
 	}
 
-	s.curTPacketHeader.nPktsLeft--
+	// Load the data for the block
+	s.loadTPacketHeader()
+
+	// Check if the block is free to access in userland
+	for pktHdr.getStatus()&unix.TP_STATUS_USER == 0 {
+
+		// Run a PPOLL on the file descriptor (waiting for the block to become available)
+		efdHasEvent, errno := s.eventHandler.Poll(unix.POLLIN | unix.POLLERR)
+
+		// If an event was received, ensure that the respective error / code is returned
+		// immediately
+		if efdHasEvent {
+			return s.handleEvent()
+		}
+
+		// Handle potential PPOLL errors
+		if errno != 0 {
+			if errno == unix.EINTR {
+				continue
+			}
+			return handlePollError(errno)
+		}
+
+		// Handle rare cases of runaway packets (this call will advance to the next block
+		// as a side effect in case of a detection)
+		if s.hasRunawayBlock() {
+			continue
+		}
+	}
+
+	// Set the position of the first packet in this block and jump to end
+	pktHdr.ppos = pktHdr.offsetToFirstPkt()
+
+finalize:
 
 	// Apply filter (if any)
-	if filter := s.link.FilterMask(); filter > 0 && filter&s.curTPacketHeader.packetType() != 0 {
-		goto fetch
+	if s.filter > 0 && s.filter&pktHdr.data[pktHdr.ppos+58] != 0 {
+		goto retry
 	}
 
 	return nil
@@ -413,9 +409,10 @@ func (s *Source) handleEvent() error {
 		return fmt.Errorf("error reading event: %w", err)
 	}
 
-	// Set the bypass marker to allow for re-entry in nextPacket() where we left off if
+	// Unset the current block data to allow for re-entry in nextPacket[ZeroCopy]() where we left off if
 	// required (e.g. on ErrCaptureUnblock)
-	s.unblocked = true
+	s.curTPacketHeader.data = nil
+
 	if efdData[7] > 0 {
 		return capture.ErrCaptureStopped
 	}
@@ -451,4 +448,11 @@ func setupRingBuffer(sd socket.FileDescriptor, tPacketReq tPacketRequest) ([]byt
 	}
 
 	return buf, eventFD, nil
+}
+
+func handlePollError(errno unix.Errno) error {
+	if errno == unix.EBADF {
+		return capture.ErrCaptureStopped
+	}
+	return fmt.Errorf("error polling for next packet: %w (errno %d)", errno, int(errno))
 }
