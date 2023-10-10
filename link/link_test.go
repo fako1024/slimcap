@@ -149,7 +149,7 @@ func TestLink_BPFFilter(t *testing.T) {
 			name: "Test Loopback link BPF Filter Function",
 			l:    TypeLoopback,
 			wantFunc: func(snapLen int) []bpf.RawInstruction {
-				return bpfInstructionsLinkTypeEther(snapLen)
+				return bpfInstructionsLinkTypeLoopback(snapLen)
 			},
 		},
 		{

@@ -13,7 +13,6 @@ import (
 // one (fetching / returning its first packet).
 func (s *Source) NextPayloadZeroCopy() (payload []byte, pktType capture.PacketType, pktLen uint32, err error) {
 
-retry:
 	pktHdr := s.curTPacketHeader
 
 	// If there is an active block, attempt to simply consume a packet from it
@@ -71,11 +70,6 @@ retry:
 	pktHdr.ppos = pktHdr.offsetToFirstPkt()
 
 finalize:
-
-	// Apply filter (if any)
-	if s.filter > 0 && s.filter&pktHdr.data[pktHdr.ppos+58] != 0 {
-		goto retry
-	}
 
 	// Parse the V3 TPacketHeader and the first byte of the payload
 	hdr := pktHdr.parseHeader()
@@ -85,7 +79,6 @@ finalize:
 	return unsafe.Slice(&pktHdr.data[pos], hdr.snaplen),
 		pktHdr.data[pktHdr.ppos+58],
 		hdr.pktLen, nil
-
 }
 
 // NextIPPacketZeroCopy receives the IP layer of the next packet from the source and returns it. The operation is blocking.
@@ -94,7 +87,6 @@ finalize:
 // one (fetching / returning its first packet IP layer).
 func (s *Source) NextIPPacketZeroCopy() (ipLayer capture.IPLayer, pktType capture.PacketType, pktLen uint32, err error) {
 
-retry:
 	pktHdr := s.curTPacketHeader
 
 	// If there is an active block, attempt to simply consume a packet from it
@@ -152,11 +144,6 @@ retry:
 	pktHdr.ppos = pktHdr.offsetToFirstPkt()
 
 finalize:
-
-	// Apply filter (if any)
-	if s.filter > 0 && s.filter&pktHdr.data[pktHdr.ppos+58] != 0 {
-		goto retry
-	}
 
 	// Parse the V3 TPacketHeader and the first byte of the payload
 	hdr := pktHdr.parseHeader()

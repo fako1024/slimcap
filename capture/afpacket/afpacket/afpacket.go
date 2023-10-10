@@ -222,11 +222,6 @@ retry:
 		return fmt.Errorf("error receiving next packet from socket: %w", err)
 	}
 
-	// Apply filter (if any)
-	if filter := s.link.FilterMask(); filter > 0 && filter&pktType != 0 {
-		goto retry
-	}
-
 	totalLen, err := s.determineTotalPktLen(s.buf)
 	if err != nil {
 		return err
@@ -309,11 +304,6 @@ retry:
 	if err != nil {
 		return -1, fmt.Errorf("error receiving next packet from socket: %w", err)
 	}
-
-	// Apply filter (if any)
-	if filter := s.link.FilterMask(); filter > 0 && filter&pktType != 0 {
-		goto retry
-	}
 	data[0] = pktType
 
 	totalLen, err := s.determineTotalPktLen(data[6:])
@@ -356,11 +346,6 @@ retry:
 	n, pktType, err := s.eventHandler.Recvfrom(data, unix.MSG_DONTWAIT)
 	if err != nil {
 		return -1, capture.PacketUnknown, 0, fmt.Errorf("error receiving next packet from socket: %w", err)
-	}
-
-	// Apply filter (if any)
-	if filter := s.link.FilterMask(); filter > 0 && filter&pktType != 0 {
-		goto retry
 	}
 
 	totalLen, err := s.determineTotalPktLen(data)
