@@ -4,6 +4,24 @@ import "golang.org/x/net/bpf"
 
 const defaultSnapLen = 262144
 
+var bpfInstructionsLinkTypeLoopback = func(snapLen int) []bpf.RawInstruction {
+	if snapLen == 0 {
+		snapLen = defaultSnapLen
+	}
+
+	// LinkTypeLoopback
+	// not outbound && (ether proto 0x0800 || ether proto 0x86DD)
+	return []bpf.RawInstruction{
+		{Op: 0x28, Jt: 0x0, Jf: 0x0, K: 0xfffff004},
+		{Op: 0x15, Jt: 0x4, Jf: 0x0, K: 0x4},
+		{Op: 0x28, Jt: 0x0, Jf: 0x0, K: 0xc},
+		{Op: 0x15, Jt: 0x1, Jf: 0x0, K: 0x800},
+		{Op: 0x15, Jt: 0x0, Jf: 0x1, K: 0x86dd},
+		{Op: 0x6, Jt: 0x0, Jf: 0x0, K: uint32(snapLen)},
+		{Op: 0x6, Jt: 0x0, Jf: 0x0, K: 0x0},
+	}
+}
+
 var bpfInstructionsLinkTypeEther = func(snapLen int) []bpf.RawInstruction {
 	if snapLen == 0 {
 		snapLen = defaultSnapLen

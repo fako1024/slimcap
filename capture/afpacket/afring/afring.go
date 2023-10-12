@@ -39,7 +39,6 @@ type Source struct {
 	link               *link.Link
 
 	ipLayerOffsetNum uint32
-	filter           byte
 
 	ringBuffer
 	sync.Mutex
@@ -76,7 +75,6 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 		nBlocks:       tPacketDefaultBlockNr,
 		ipLayerOffset: link.Type.IPHeaderOffset(),
 		link:          link,
-		filter:        link.FilterMask(),
 	}
 	src.ipLayerOffsetNum = uint32(src.ipLayerOffset)
 
@@ -336,7 +334,6 @@ func (s *Source) Link() *link.Link {
 // one (fetching its first packet).
 func (s *Source) nextPacket() error {
 
-retry:
 	pktHdr := s.curTPacketHeader
 
 	// If there is an active block, attempt to simply consume a packet from it
@@ -351,7 +348,7 @@ retry:
 
 			// Update position of next packet and jump to the end
 			pktHdr.ppos += nextPos
-			goto finalize
+			return nil
 		}
 
 		// If there is no next offset, release the TPacketHeader to the kernel and move on to the next block
@@ -390,13 +387,6 @@ retry:
 
 	// Set the position of the first packet in this block and jump to end
 	pktHdr.ppos = pktHdr.offsetToFirstPkt()
-
-finalize:
-
-	// Apply filter (if any)
-	if s.filter > 0 && s.filter&pktHdr.data[pktHdr.ppos+58] != 0 {
-		goto retry
-	}
 
 	return nil
 }
