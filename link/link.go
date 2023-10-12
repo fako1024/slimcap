@@ -92,10 +92,10 @@ func (l Type) IPHeaderOffset() byte {
 // BPFFilter returns the link / interface specific raw BPF instructions to filter for valid packets only
 func (l Type) BPFFilter() func(snapLen int) []bpf.RawInstruction {
 	switch l {
-	case TypeLoopback:
-		return bpfInstructionsLinkTypeLoopback
 	case TypeEthernet:
 		return bpfInstructionsLinkTypeEther
+	case TypeLoopback:
+		return bpfInstructionsLinkTypeLoopback
 	case TypePPP,
 		TypeIP6IP6,
 		TypeGRE,
