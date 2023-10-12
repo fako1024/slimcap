@@ -68,11 +68,11 @@ jobs:
         with:
           status_sha: ${{ github.sha }}
           status_name: bench-result
-          status_on_degraded: neutral
+          status_on_degraded: failure
           benchdiff_args: |
             --packages ./...
-            --count=10
+            --count=15
             --warmup-count=0
-            --benchtime=1s
+            --benchtime=5s
             --tolerance=5
             --debug
