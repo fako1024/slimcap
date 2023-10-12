@@ -12,6 +12,7 @@ jobs:
   build-linux:
     name: Build on Linux
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     steps:
     - name: Set up Go
       uses: actions/setup-go@v3
@@ -50,3 +51,28 @@ jobs:
 
     - name: Race Detector
       run: go test -race -v ./...
+
+  bench:
+    name: Benchmark
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          repository: fako1024/slimcap
+          fetch-depth: 0
+      - uses: actions/setup-go@v3
+        with:
+          go-version: ^1.21
+      - uses: WillAbides/benchdiff-action@v0
+        with:
+          status_sha: ${{ github.sha }}
+          status_name: bench-result
+          status_on_degraded: neutral
+          benchdiff_args: |
+            --packages ./...
+            --cpu=1,2
+            --count=10
+            --warmup-count=1
+            --benchtime=1s
+            --tolerance=5
