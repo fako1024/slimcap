@@ -71,8 +71,8 @@ jobs:
           status_on_degraded: neutral
           benchdiff_args: |
             --packages ./...
-            --cpu=1,2
             --count=10
-            --warmup-count=1
+            --warmup-count=0
             --benchtime=1s
             --tolerance=5
+            --debug
