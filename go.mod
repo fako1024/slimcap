@@ -3,7 +3,7 @@ module github.com/fako1024/slimcap
 go 1.21
 
 require (
-	github.com/els0r/telemetry/logging v0.0.0-20230904121842-8451f59b6057
+	github.com/els0r/telemetry/logging v0.0.0-20230905085019-03d1cd3d4b3d
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/net v0.17.0
 	golang.org/x/sys v0.13.0
