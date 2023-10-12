@@ -70,10 +70,7 @@ jobs:
           status_name: bench-result
           status_on_degraded: failure
           benchdiff_args: |
-            --packages ./...
-            --count=15
             --warmup-count=0
-            --benchtime=5s
             --tolerance=5
+            --benchmark-args="test -timeout 1h -run '^$' -bench . -count 15 -benchtime 5s ./..."
             --debug
-            --benchmark-args="test {{ .Packages }} -timeout 1h -run '^$' {{- if .Bench }} -bench {{ .Bench }}{{end}} {{- if .Count }} -count {{ .Count }}{{end}} {{- if .Benchtime }} -benchtime {{ .Benchtime }}{{end}} {{- if .CPU }} -cpu {{ .CPU }}{{ end }} {{- if .Tags }} -tags "{{ .Tags }}"{{ end }} {{- if .Benchmem }} -benchmem{{ end }}"
