@@ -69,4 +69,5 @@ jobs:
     - name: Run Comparative Benchmark
       run: |
         env > environment_vars.txt
+        go env >> environment_vars.txt
         bash /home/app/bench.sh
