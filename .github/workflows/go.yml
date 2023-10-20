@@ -67,4 +67,6 @@ jobs:
       uses: actions/checkout@v3
 
     - name: Run Comparative Benchmark
-      run: /home/app/bench.sh
+      run: |
+        go version
+        bash /home/app/bench.sh
