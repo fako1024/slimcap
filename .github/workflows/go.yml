@@ -67,7 +67,8 @@ jobs:
       uses: actions/checkout@v3
 
     - name: Run Comparative Benchmark
+      shell: bash
       run: |
         env > environment_vars.txt
         go env >> environment_vars.txt
-        bash /home/app/bench.sh
+        /home/app/bench.sh
