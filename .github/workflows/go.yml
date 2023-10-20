@@ -72,5 +72,5 @@ jobs:
           benchdiff_args: |
             --warmup-count=0
             --tolerance=5
-            --benchmark-args="test -timeout 1h -run '^$' -bench . -count 15 -benchtime 5s ./..."
+            --benchmark-args="test -timeout 1h -run '^$' -bench CaptureMethods/ZeroCopy -count 15 -benchtime 5s ./..."
             --debug
