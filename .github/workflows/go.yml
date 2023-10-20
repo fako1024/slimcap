@@ -57,13 +57,14 @@ jobs:
     runs-on: [self-hosted, linux, benchmark-only]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     steps:
-      - uses: actions/checkout@v3
-        with:
-          repository: fako1024/slimcap
-          fetch-depth: 0
-      - uses: actions/setup-go@v3
-        with:
-          go-version: ^1.21
+    - name: Set up Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: ^1.21
+      id: go
 
-      - name: Run Comparative Benchmark
-        run: /home/app/bench.sh
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v3
+
+    - name: Run Comparative Benchmark
+      run: /home/app/bench.sh
