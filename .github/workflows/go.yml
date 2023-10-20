@@ -54,7 +54,7 @@ jobs:
 
   bench:
     name: Benchmark
-    runs-on: self-hosted
+    runs-on: [self-hosted, linux, benchmark-only]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     steps:
       - uses: actions/checkout@v3
@@ -71,6 +71,6 @@ jobs:
           status_on_degraded: failure
           benchdiff_args: |
             --warmup-count=0
-            --tolerance=5
-            --benchmark-args="test -timeout 1h -run '^$' -bench CaptureMethods/ZeroCopy -count 15 -benchtime 5s ./..."
+            --tolerance=3
+            --benchmark-args="test -timeout 1h -run '^$' -bench CaptureMethods/ZeroCopy -count 20 -benchtime 5s ./capture/afpacket/afring"
             --debug
