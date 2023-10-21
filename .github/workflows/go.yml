@@ -71,8 +71,8 @@ jobs:
     - name: Run Comparative Benchmark
       env:
         BENCH_TORUN: BenchmarkCaptureMethods/NextPacket_10kiBx512
-        BENCH_COUNT: 15
-        BENCH_TIME: 3s
+        BENCH_COUNT: 20
+        BENCH_TIME: 5s
       run: |
         printenv PATH > .path
         /home/app/bench.sh
