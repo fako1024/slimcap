@@ -70,6 +70,7 @@ jobs:
 
     - name: Run Comparative Benchmark
       env:
+        BENCH_TORUN: BenchmarkCaptureMethods/NextPacket_10kiBx512
         BENCH_COUNT: 15
         BENCH_TIME: 3s
       run: |
