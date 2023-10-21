@@ -58,17 +58,21 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     steps:
     - name: Set up Go
-      uses: actions/setup-go@v3
+      uses: actions/setup-go@v4
       with:
         go-version: ^1.21
       id: go
 
     - name: Check out code into the Go module directory
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
+      with:
+        show-progress: false
 
     - name: Run Comparative Benchmark
-      shell: bash {0}
+      env:
+        BENCH_COUNT: 15
+        BENCH_TIME: 3s
       run: |
-        env > environment_vars.txt
-        go env >> environment_vars.txt
+        env
+        go env
         /home/app/bench.sh
