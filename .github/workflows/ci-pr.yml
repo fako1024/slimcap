@@ -25,8 +25,8 @@ jobs:
     - name: Run Comparative Benchmark
       id: bench
       env:
-        BENCH_TORUN: BenchmarkCaptureMethods/NextPacket_10kiBx512
-        BENCH_COUNT: 10
+        BENCH_TORUN: .
+        BENCH_COUNT: 20
         BENCH_TIME: 5s
       run: |
         printenv PATH > .path
