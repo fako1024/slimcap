@@ -19,6 +19,7 @@ jobs:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v4
       with:
+        fetch-depth: 0
         show-progress: false
 
     - name: Run Comparative Benchmark
@@ -37,7 +38,8 @@ jobs:
       with:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         header: bench
-        recreate: true
+        hide_and_recreate: true
+        hide_classify: "OUTDATED"
         message: |
           ### Benchmark Result
           <details><summary>Benchmark diff with base branch</summary>
