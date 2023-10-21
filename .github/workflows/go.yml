@@ -73,5 +73,5 @@ jobs:
         BENCH_COUNT: 15
         BENCH_TIME: 3s
       run: |
-        export PATH=${{PATH}}
+        printenv PATH > .path
         /home/app/bench.sh
