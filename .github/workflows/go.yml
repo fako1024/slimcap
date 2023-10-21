@@ -73,6 +73,5 @@ jobs:
         BENCH_COUNT: 15
         BENCH_TIME: 3s
       run: |
-        env
-        go env
+        export PATH=${{PATH}}
         /home/app/bench.sh
