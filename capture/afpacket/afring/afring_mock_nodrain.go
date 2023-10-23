@@ -69,12 +69,20 @@ func (m *MockSourceNoDrain) Run(releaseInterval time.Duration) (<-chan error, er
 	m.wgRunning.Add(1)
 	go func(errs chan error) {
 
-		// Minimize scheduler overhead by locking this goroutine to the current thread
-		runtime.LockOSThread()
 		defer func() {
 			close(errs)
 			m.wgRunning.Done()
 		}()
+
+		// Minimize scheduler overhead by locking this goroutine to the current thread.
+		// In addition, pin the task to the CPU set (if provided)
+		runtime.LockOSThread()
+		if m.cpuSet != nil {
+			if err := unix.SchedSetaffinity(0, m.cpuSet); err != nil {
+				errs <- err
+				return
+			}
+		}
 
 		// Queue / trigger a single event equivalent to receiving a new block via the PPOLL syscall and
 		// instruct the mock socket to not release the semaphore. That way data can be consumed immediately

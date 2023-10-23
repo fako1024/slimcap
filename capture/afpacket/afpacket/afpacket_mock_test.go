@@ -6,6 +6,7 @@ package afpacket
 import (
 	"fmt"
 	"net"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/link"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 func TestOptions(t *testing.T) {
@@ -228,6 +230,12 @@ func TestPipe(t *testing.T) {
 
 func BenchmarkCaptureMethods(b *testing.B) {
 
+	// TODO: Add some logic / checking for isolated cores (and use those) and
+	// validation that there are sufficient cores
+	var cpuMaskFG, cpuMaskBG unix.CPUSet
+	cpuMaskFG.Set(1)
+	cpuMaskBG.Set(2)
+
 	testPacket, err := capture.BuildPacket(
 		net.ParseIP("1.2.3.4"),
 		net.ParseIP("4.5.6.7"),
@@ -242,6 +250,7 @@ func BenchmarkCaptureMethods(b *testing.B) {
 		Promiscuous(false),
 	)
 	require.Nil(b, err)
+	mockSrc.CPUSet(&cpuMaskBG)
 
 	for mockSrc.CanAddPackets() {
 		require.Nil(b, mockSrc.AddPacket(testPacket))
@@ -249,7 +258,9 @@ func BenchmarkCaptureMethods(b *testing.B) {
 	mockSrc.RunNoDrain()
 
 	b.Run("NextPacket", func(b *testing.B) {
+		require.Nil(b, pinToCPU(&cpuMaskFG))
 		b.ReportAllocs()
+		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			p, _ := mockSrc.NextPacket(nil)
 			_ = p
@@ -258,6 +269,7 @@ func BenchmarkCaptureMethods(b *testing.B) {
 
 	b.Run("NextPacketInPlace", func(b *testing.B) {
 		var p capture.Packet = mockSrc.NewPacket()
+		require.Nil(b, pinToCPU(&cpuMaskFG))
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -279,6 +291,7 @@ func BenchmarkCaptureMethods(b *testing.B) {
 	b.Run("NextIPPacketInPlace", func(b *testing.B) {
 		pkt := mockSrc.NewPacket()
 		var p capture.IPLayer = pkt.IPLayer()
+		require.Nil(b, pinToCPU(&cpuMaskFG))
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -290,7 +303,9 @@ func BenchmarkCaptureMethods(b *testing.B) {
 	})
 
 	b.Run("NextPacketFn", func(b *testing.B) {
+		require.Nil(b, pinToCPU(&cpuMaskFG))
 		b.ReportAllocs()
+		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			_ = mockSrc.NextPacketFn(func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte) error {
 				_ = payload
@@ -349,4 +364,20 @@ func testCaptureMethods(t *testing.T, fn func(t *testing.T, src *MockSource, i, 
 
 	// Close the mock source
 	require.Nil(t, mockSrc.Close())
+}
+
+func pinToCPU(cpuSet *unix.CPUSet) error {
+
+	// If no CPU set is provided, do nothing
+	if cpuSet == nil {
+		return nil
+	}
+
+	// Set affinity and lock thread
+	if err := unix.SchedSetaffinity(0, cpuSet); err != nil {
+		return err
+	}
+	runtime.LockOSThread()
+
+	return nil
 }
