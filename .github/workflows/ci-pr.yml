@@ -26,7 +26,7 @@ jobs:
     - name: Run Comparative Benchmark
       id: bench
       env:
-        BENCH_TORUN: .
+        BENCH_TORUN: CaptureMethods/10485kiBx4
         BENCH_COUNT: 20
         BENCH_TIME: 5s
       run: |
