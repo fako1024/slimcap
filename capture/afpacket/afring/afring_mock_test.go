@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"testing"
 	"time"
@@ -384,6 +385,13 @@ func BenchmarkCaptureMethods(b *testing.B) {
 	var cpuMaskFG, cpuMaskBG unix.CPUSet
 	cpuMaskFG.Set(1)
 	cpuMaskBG.Set(2)
+
+	oldGCPercent := debug.SetGCPercent(-1)
+	oldMemLimit := debug.SetMemoryLimit(512 * 1024 * 1024)
+	defer func() {
+		debug.SetGCPercent(oldGCPercent)
+		debug.SetMemoryLimit(oldMemLimit)
+	}()
 
 	testPacket, err := capture.BuildPacket(
 		net.ParseIP("1.2.3.4"),
