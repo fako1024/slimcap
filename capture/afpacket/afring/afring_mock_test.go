@@ -6,6 +6,8 @@ package afring
 import (
 	"fmt"
 	"net"
+	"runtime"
+	"runtime/debug"
 	"sync"
 	"testing"
 	"time"
@@ -13,6 +15,7 @@ import (
 	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/link"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 func TestOptions(t *testing.T) {
@@ -377,6 +380,19 @@ func TestPipe(t *testing.T) {
 
 func BenchmarkCaptureMethods(b *testing.B) {
 
+	// TODO: Add some logic / checking for isolated cores (and use those) and
+	// validation that there are sufficient cores
+	var cpuMaskFG, cpuMaskBG unix.CPUSet
+	cpuMaskFG.Set(1)
+	cpuMaskBG.Set(2)
+
+	oldGCPercent := debug.SetGCPercent(-1)
+	oldMemLimit := debug.SetMemoryLimit(512 * 1024 * 1024)
+	defer func() {
+		debug.SetGCPercent(oldGCPercent)
+		debug.SetMemoryLimit(oldMemLimit)
+	}()
+
 	testPacket, err := capture.BuildPacket(
 		net.ParseIP("1.2.3.4"),
 		net.ParseIP("4.5.6.7"),
@@ -401,6 +417,7 @@ func BenchmarkCaptureMethods(b *testing.B) {
 			Promiscuous(false),
 		)
 		require.Nil(b, err)
+		mockSrc.CPUSet(&cpuMaskBG)
 
 		for mockSrc.CanAddPackets() {
 			require.Nil(b, mockSrc.AddPacket(testPacket))
@@ -409,7 +426,9 @@ func BenchmarkCaptureMethods(b *testing.B) {
 		require.Nil(b, err)
 
 		b.Run(fmt.Sprintf("NextPacket_%dkiBx%d", benchConfig.blockSize/1000, benchConfig.nBlocks), func(b *testing.B) {
+			require.Nil(b, pinToCPU(&cpuMaskFG))
 			b.ReportAllocs()
+			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				p, _ := mockSrc.NextPacket(nil)
 				_ = p
@@ -418,6 +437,7 @@ func BenchmarkCaptureMethods(b *testing.B) {
 
 		b.Run(fmt.Sprintf("NextPacketInPlace_%dkiBx%d", benchConfig.blockSize/1000, benchConfig.nBlocks), func(b *testing.B) {
 			var p capture.Packet = mockSrc.NewPacket()
+			require.Nil(b, pinToCPU(&cpuMaskFG))
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -427,7 +447,9 @@ func BenchmarkCaptureMethods(b *testing.B) {
 		})
 
 		b.Run(fmt.Sprintf("NextPayload_%dkiBx%d", benchConfig.blockSize/1000, benchConfig.nBlocks), func(b *testing.B) {
+			require.Nil(b, pinToCPU(&cpuMaskFG))
 			b.ReportAllocs()
+			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				p, pktType, totalLen, _ := mockSrc.NextPayload(nil)
 				_ = p
@@ -439,6 +461,7 @@ func BenchmarkCaptureMethods(b *testing.B) {
 		b.Run(fmt.Sprintf("NextPayloadInPlace_%dkiBx%d", benchConfig.blockSize/1000, benchConfig.nBlocks), func(b *testing.B) {
 			pkt := mockSrc.NewPacket()
 			var p []byte = pkt.Payload()
+			require.Nil(b, pinToCPU(&cpuMaskFG))
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -450,7 +473,9 @@ func BenchmarkCaptureMethods(b *testing.B) {
 		})
 
 		b.Run(fmt.Sprintf("NextPayloadZeroCopy_%dkiBx%d", benchConfig.blockSize/1000, benchConfig.nBlocks), func(b *testing.B) {
+			require.Nil(b, pinToCPU(&cpuMaskFG))
 			b.ReportAllocs()
+			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				p, pktType, totalLen, _ := mockSrc.NextPayloadZeroCopy()
 				_ = p
@@ -460,7 +485,9 @@ func BenchmarkCaptureMethods(b *testing.B) {
 		})
 
 		b.Run(fmt.Sprintf("NextIPPacket_%dkiBx%d", benchConfig.blockSize/1000, benchConfig.nBlocks), func(b *testing.B) {
+			require.Nil(b, pinToCPU(&cpuMaskFG))
 			b.ReportAllocs()
+			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				p, pktType, totalLen, _ := mockSrc.NextIPPacket(nil)
 				_ = p
@@ -472,6 +499,7 @@ func BenchmarkCaptureMethods(b *testing.B) {
 		b.Run(fmt.Sprintf("NextIPPacketInPlace_%dkiBx%d", benchConfig.blockSize/1000, benchConfig.nBlocks), func(b *testing.B) {
 			pkt := mockSrc.NewPacket()
 			var p capture.IPLayer = pkt.IPLayer()
+			require.Nil(b, pinToCPU(&cpuMaskFG))
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -483,7 +511,9 @@ func BenchmarkCaptureMethods(b *testing.B) {
 		})
 
 		b.Run(fmt.Sprintf("NextIPPacketZeroCopy_%dkiBx%d", benchConfig.blockSize/1000, benchConfig.nBlocks), func(b *testing.B) {
+			require.Nil(b, pinToCPU(&cpuMaskFG))
 			b.ReportAllocs()
+			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				p, pktType, totalLen, _ := mockSrc.NextIPPacketZeroCopy()
 				_ = p
@@ -493,7 +523,9 @@ func BenchmarkCaptureMethods(b *testing.B) {
 		})
 
 		b.Run(fmt.Sprintf("NextPacketFn_%dkiBx%d", benchConfig.blockSize/1000, benchConfig.nBlocks), func(b *testing.B) {
+			require.Nil(b, pinToCPU(&cpuMaskFG))
 			b.ReportAllocs()
+			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				_ = mockSrc.NextPacketFn(func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte) error {
 					_ = payload
@@ -560,4 +592,21 @@ func testCaptureMethods(t *testing.T, fn func(t *testing.T, _ *MockSource, _, _ 
 
 	// Close the mock source
 	require.Nil(t, mockSrc.Close())
+}
+
+// TODO: Move this soemwhere it can be shared (maybe even outside slimcap)
+func pinToCPU(cpuSet *unix.CPUSet) error {
+
+	// If no CPU set is provided, do nothing
+	if cpuSet == nil {
+		return nil
+	}
+
+	// Set affinity and lock thread
+	if err := unix.SchedSetaffinity(0, cpuSet); err != nil {
+		return err
+	}
+	runtime.LockOSThread()
+
+	return nil
 }

@@ -6,12 +6,14 @@ package afpacket
 import (
 	"errors"
 	"io"
+	"runtime"
 	"time"
 
 	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/capture/afpacket/socket"
 	"github.com/fako1024/slimcap/event"
 	"github.com/fako1024/slimcap/link"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -28,8 +30,10 @@ const (
 type MockSource struct {
 	*Source
 
-	mockPackets         chan capture.Packet
-	MockFd              *socket.MockFileDescriptor
+	mockPackets chan capture.Packet
+	MockFd      *socket.MockFileDescriptor
+
+	cpuSet              *unix.CPUSet
 	packetAddCallbackFn func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte)
 }
 
@@ -37,6 +41,12 @@ type MockSource struct {
 // to the mock source (e.g. to build a reference for comparison)
 func (m *MockSource) PacketAddCallbackFn(fn func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte)) *MockSource {
 	m.packetAddCallbackFn = fn
+	return m
+}
+
+// CPUSet defines an explicit set of CPU cores to run / pin any background tasks on / to
+func (m *MockSource) CPUSet(cpuSet *unix.CPUSet) *MockSource {
+	m.cpuSet = cpuSet
 	return m
 }
 
@@ -107,6 +117,17 @@ func (m *MockSource) Pipe(src capture.Source, doneReadingChan chan struct{}) cha
 	errChan := make(chan error)
 
 	go func(errs chan error, done chan struct{}) {
+
+		// Minimize scheduler overhead by locking this goroutine to the current thread.
+		// In addition, pin the task to the CPU set (if provided)
+		runtime.LockOSThread()
+		if m.cpuSet != nil {
+			if err := unix.SchedSetaffinity(0, m.cpuSet); err != nil {
+				errs <- err
+				return
+			}
+		}
+
 		for {
 			if err := m.AddPacketFromSource(src); err != nil {
 				if errors.Is(err, io.EOF) || errors.Is(err, capture.ErrCaptureStopped) {
@@ -144,6 +165,16 @@ func (m *MockSource) Run() chan error {
 func (m *MockSource) RunNoDrain() chan error {
 	errChan := make(chan error)
 	go func(errs chan error) {
+
+		// Minimize scheduler overhead by locking this goroutine to the current thread.
+		// In addition, pin the task to the CPU set (if provided)
+		runtime.LockOSThread()
+		if m.cpuSet != nil {
+			if err := unix.SchedSetaffinity(0, m.cpuSet); err != nil {
+				errs <- err
+				return
+			}
+		}
 
 		// Populate a slice with all packets from the channel for repeated consumption
 		packets := make([]capture.Packet, 0, len(m.mockPackets))
@@ -190,9 +221,19 @@ func (m *MockSource) Close() error {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
-func (m *MockSource) run(errChan chan error) {
+func (m *MockSource) run(errs chan error) {
 
-	defer close(errChan)
+	defer close(errs)
+
+	// Minimize scheduler overhead by locking this goroutine to the current thread.
+	// In addition, pin the task to the CPU set (if provided)
+	runtime.LockOSThread()
+	if m.cpuSet != nil {
+		if err := unix.SchedSetaffinity(0, m.cpuSet); err != nil {
+			errs <- err
+			return
+		}
+	}
 
 	for pkt := range m.mockPackets {
 
@@ -200,10 +241,10 @@ func (m *MockSource) run(errChan chan error) {
 
 		// Queue / trigger an event equivalent to receiving a new packet via the PPOLL syscall
 		if err := event.ToMockHandler(m.eventHandler).SignalAvailableData(); err != nil {
-			errChan <- err
+			errs <- err
 			return
 		}
 	}
 
-	errChan <- nil
+	errs <- nil
 }

@@ -6,6 +6,7 @@ package afring
 import (
 	"errors"
 	"io"
+	"runtime"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -49,6 +50,7 @@ type MockSource struct {
 
 	MockFd *socket.MockFileDescriptor
 
+	cpuSet              *unix.CPUSet
 	packetAddCallbackFn func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte)
 }
 
@@ -95,6 +97,12 @@ func NewMockSource(_ string, options ...Option) (*MockSource, error) {
 // to the mock source (e.g. to build a reference for comparison)
 func (m *MockSource) PacketAddCallbackFn(fn func(payload []byte, totalLen uint32, pktType, ipLayerOffset byte)) *MockSource {
 	m.packetAddCallbackFn = fn
+	return m
+}
+
+// CPUSet defines an explicit set of CPU cores to run / pin any background tasks on / to
+func (m *MockSource) CPUSet(cpuSet *unix.CPUSet) *MockSource {
+	m.cpuSet = cpuSet
 	return m
 }
 
@@ -196,6 +204,17 @@ func (m *MockSource) Pipe(src capture.Source, doneReadingChan chan struct{}) (er
 	errChan = make(chan error, 1)
 
 	go func(errs chan error, done chan struct{}) {
+
+		// Minimize scheduler overhead by locking this goroutine to the current thread.
+		// In addition, pin the task to the CPU set (if provided)
+		runtime.LockOSThread()
+		if m.cpuSet != nil {
+			if err := unix.SchedSetaffinity(0, m.cpuSet); err != nil {
+				errs <- err
+				return
+			}
+		}
+
 		for {
 			if err := m.AddPacketFromSource(src); err != nil {
 				if errors.Is(err, io.EOF) || errors.Is(err, capture.ErrCaptureStopped) {
@@ -222,10 +241,10 @@ func (m *MockSource) Pipe(src capture.Source, doneReadingChan chan struct{}) (er
 // Run executes processing of packets in the background, mimicking the function of an actual kernel
 // packet ring buffer
 func (m *MockSource) Run() <-chan error {
-	errChan := make(chan error)
-	go m.run(errChan)
+	errs := make(chan error)
+	go m.run(errs)
 
-	return errChan
+	return errs
 }
 
 // Done notifies the mock source that no more mock packets will be added, causing the ring buffer
@@ -248,8 +267,18 @@ func (m *MockSource) ForceBlockskUnavailable() {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
-func (m *MockSource) run(errChan chan<- error) {
-	defer close(errChan)
+func (m *MockSource) run(errs chan<- error) {
+	defer close(errs)
+
+	// Minimize scheduler overhead by locking this goroutine to the current thread.
+	// In addition, pin the task to the CPU set (if provided)
+	runtime.LockOSThread()
+	if m.cpuSet != nil {
+		if err := unix.SchedSetaffinity(0, m.cpuSet); err != nil {
+			errs <- err
+			return
+		}
+	}
 
 	for block := range m.mockBlocks {
 
@@ -263,12 +292,12 @@ func (m *MockSource) run(errChan chan<- error) {
 
 		// Queue / trigger an event equivalent to receiving a new block via the PPOLL syscall
 		if err := event.ToMockHandler(m.eventHandler).SignalAvailableData(); err != nil {
-			errChan <- err
+			errs <- err
 			return
 		}
 	}
 
-	errChan <- nil
+	errs <- nil
 }
 
 func (m *MockSource) getBlockStatus(n int) (status uint32) {
