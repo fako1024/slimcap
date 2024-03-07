@@ -26,7 +26,7 @@ const (
 var (
 
 	// ErrNotExist denotes that the interface in question does not exist
-	ErrNotExist = errors.New("interface does not exist or is unsupported")
+	ErrNotExist = errors.New("interface does not exist")
 
 	// ErrNotUp denotes that the interface in question is not up
 	ErrNotUp = errors.New("interface is currently not up")
