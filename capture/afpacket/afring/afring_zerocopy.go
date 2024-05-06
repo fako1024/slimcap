@@ -76,7 +76,7 @@ finalize:
 	pos := pktHdr.ppos + uint32(hdr.pktMac)
 
 	// Return the payload / IP layer subslice & heeader parameters
-	return unsafe.Slice(&pktHdr.data[pos], hdr.snaplen),
+	return unsafe.Slice(&pktHdr.data[pos], hdr.snaplen), // #nosec: G103
 		pktHdr.data[pktHdr.ppos+58],
 		hdr.pktLen, nil
 }
@@ -150,7 +150,7 @@ finalize:
 	pos := pktHdr.ppos + uint32(hdr.pktNet)
 
 	// Extract the payload (zero-copy) & parameters
-	return unsafe.Slice(&pktHdr.data[pos], hdr.snaplen-s.ipLayerOffsetNum),
+	return unsafe.Slice(&pktHdr.data[pos], hdr.snaplen-s.ipLayerOffsetNum), // #nosec: G103
 		pktHdr.data[pktHdr.ppos+58],
 		hdr.pktLen, nil
 }
