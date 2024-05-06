@@ -22,10 +22,13 @@ import (
 	"golang.org/x/net/ipv6"
 )
 
-var (
+const (
 
 	// PacketHdrOffset denotes the header offset / length for storing information about the packet
 	PacketHdrOffset = 6
+)
+
+var (
 
 	// ErrCaptureStopped denotes that the capture was stopped
 	ErrCaptureStopped = errors.New("capture was stopped")
@@ -85,8 +88,12 @@ func (i IPLayer) String() (res string) {
 	if ipLayerType == 4 {
 		protocol := i[9]
 		if protocol == 6 || protocol == 17 {
-			dport = binary.BigEndian.Uint16(i[ipv4.HeaderLen+2 : ipv4.HeaderLen+4])
-			sport = binary.BigEndian.Uint16(i[ipv4.HeaderLen : ipv4.HeaderLen+2])
+			if len(i) >= ipv4.HeaderLen+4 {
+				dport = binary.BigEndian.Uint16(i[ipv4.HeaderLen+2 : ipv4.HeaderLen+4])
+			}
+			if len(i) >= ipv4.HeaderLen+2 {
+				sport = binary.BigEndian.Uint16(i[ipv4.HeaderLen : ipv4.HeaderLen+2])
+			}
 		}
 		return fmt.Sprintf("%s:%d => %s:%d (proto: %d)",
 			net.IP(i[12:16]).String(),
@@ -98,8 +105,12 @@ func (i IPLayer) String() (res string) {
 	} else if ipLayerType == 6 {
 		protocol := i[6]
 		if protocol == 6 || protocol == 17 {
-			dport = binary.BigEndian.Uint16(i[ipv6.HeaderLen+2 : ipv6.HeaderLen+4])
-			sport = binary.BigEndian.Uint16(i[ipv6.HeaderLen : ipv6.HeaderLen+2])
+			if len(i) >= ipv6.HeaderLen+4 {
+				dport = binary.BigEndian.Uint16(i[ipv6.HeaderLen+2 : ipv6.HeaderLen+4])
+			}
+			if len(i) >= ipv6.HeaderLen+2 {
+				sport = binary.BigEndian.Uint16(i[ipv6.HeaderLen : ipv6.HeaderLen+2])
+			}
 		}
 		return fmt.Sprintf("%s:%d => %s:%d (proto: %d)",
 			net.IP(i[8:24]).String(),
@@ -188,9 +199,9 @@ func NewIPPacket(buf Packet, payload []byte, pktType PacketType, totalLen int, i
 	buf[0] = pktType
 	buf[1] = ipLayerOffset
 	*(*uint32)(unsafe.Pointer(&buf[2])) = uint32(totalLen) // #nosec G103
-	copy(buf[PacketHdrOffset:], payload)
+	n := copy(buf[PacketHdrOffset:], payload)
 
-	return buf
+	return buf[:PacketHdrOffset+n]
 }
 
 // TotalLen returnsthe total packet length, including all headers
