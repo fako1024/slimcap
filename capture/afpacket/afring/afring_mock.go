@@ -141,7 +141,7 @@ func (m *MockSource) addPacket(payload []byte, totalLen uint32, pktType, ipLayer
 	block := m.ringBuffer.ring[thisBlock*m.blockSize : thisBlock*m.blockSize+m.blockSize]
 
 	*(*tPacketHeaderV3Mock)(unsafe.Pointer(&block[m.curBlockPos+12])) = tPacketHeaderV3Mock{
-		snaplen: min(uint32(m.snapLen), totalLen), // The snaplen is set to the totalLen if a packet is shorter
+		snaplen: min(uint32(m.snapLen), uint32(len(payload))), // The snaplen is set to the actual payload length if a packet is shorter
 		pktLen:  totalLen,
 		pktMac:  mac,
 		pktNet:  mac + uint16(m.ipLayerOffset),

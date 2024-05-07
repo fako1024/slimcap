@@ -121,7 +121,7 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 // NextIPPacket() methods (the latter two by calling .Payload() / .IPLayer() on the created buffer). It ensures
 // that a valid packet of appropriate structure / length is created
 func (s *Source) NewPacket() capture.Packet {
-	p := make(capture.Packet, 6+s.snapLen)
+	p := make(capture.Packet, capture.PacketHdrOffset+s.snapLen)
 	return p
 }
 
