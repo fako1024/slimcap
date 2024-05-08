@@ -5,8 +5,8 @@ go 1.22.1
 require (
 	github.com/els0r/telemetry/logging v0.0.0-20231115132112-88976d9255a2
 	github.com/stretchr/testify v1.9.0
-	golang.org/x/net v0.24.0
-	golang.org/x/sys v0.19.0
+	golang.org/x/net v0.25.0
+	golang.org/x/sys v0.20.0
 )
 
 require (
