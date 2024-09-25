@@ -21,6 +21,7 @@ import (
 	"github.com/fako1024/slimcap/capture/afpacket/socket"
 	"github.com/fako1024/slimcap/event"
 	"github.com/fako1024/slimcap/link"
+	"golang.org/x/net/bpf"
 	"golang.org/x/sys/unix"
 )
 
@@ -36,9 +37,11 @@ type Source struct {
 	snapLen            int
 	blockSize, nBlocks int
 	isPromisc          bool
+	ignoreVlan         bool
 	link               *link.Link
 
 	ipLayerOffsetNum uint32
+	extraBPFInstr    []bpf.RawInstruction
 
 	ringBuffer
 	sync.Mutex
@@ -96,7 +99,7 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 	}
 
 	// Set socket options
-	if err := src.eventHandler.Fd.SetSocketOptions(link, src.snapLen, src.isPromisc); err != nil {
+	if err := src.eventHandler.Fd.SetSocketOptions(link, src.snapLen, src.isPromisc, src.ignoreVlan, src.extraBPFInstr...); err != nil {
 		return nil, fmt.Errorf("failed to set AF_PACKET socket options on %s: %w", link.Name, err)
 	}
 

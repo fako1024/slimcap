@@ -14,6 +14,7 @@ import (
 	"unsafe"
 
 	"github.com/fako1024/slimcap/link"
+	"golang.org/x/net/bpf"
 	"golang.org/x/sys/unix"
 )
 
@@ -69,7 +70,7 @@ func (sd FileDescriptor) GetSocketStats() (ss TPacketStats, err error) {
 
 // SetSocketOptions sets several socket options on the underlying file descriptor required
 // to perform AF_PACKET capture and retrieval of socket / traffic statistics
-func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, promisc bool) error {
+func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, promisc, noVlan bool, extraBPFInstr ...bpf.RawInstruction) error {
 
 	if sd <= 0 {
 		return errors.New("invalid socket")
@@ -98,7 +99,7 @@ func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, promisc
 	if bpfFilterFn := iface.Type.BPFFilter(); bpfFilterFn != nil {
 		var (
 			p               unix.SockFprog
-			bfpInstructions = bpfFilterFn(snapLen)
+			bfpInstructions = bpfFilterFn(snapLen, noVlan, extraBPFInstr...)
 		)
 		p.Len = uint16(len(bfpInstructions))
 		if p.Len != 0 {

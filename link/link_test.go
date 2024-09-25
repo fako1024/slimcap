@@ -83,7 +83,7 @@ func TestBPFFilter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			filter := tt.linkType.BPFFilter()(snaplen)
+			filter := tt.linkType.BPFFilter()(snaplen, false)
 			if filter == nil {
 				t.Errorf("BPFFilter() returned nil filter")
 			}
@@ -136,48 +136,48 @@ func TestLink_BPFFilter(t *testing.T) {
 	tests := []struct {
 		name     string
 		l        Type
-		wantFunc func(snapLen int) []bpf.RawInstruction
+		wantFunc BPFFn
 	}{
 		{
 			name: "Test Ethernet link BPF Filter Function",
 			l:    TypeEthernet,
-			wantFunc: func(snapLen int) []bpf.RawInstruction {
-				return bpfInstructionsLinkTypeEther(snapLen)
+			wantFunc: func(snapLen int, noVlan bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction {
+				return bpfInstructionsLinkTypeEther(snapLen, false)
 			},
 		},
 		{
 			name: "Test Loopback link BPF Filter Function",
 			l:    TypeLoopback,
-			wantFunc: func(snapLen int) []bpf.RawInstruction {
-				return bpfInstructionsLinkTypeLoopback(snapLen)
+			wantFunc: func(snapLen int, noVlan bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction {
+				return bpfInstructionsLinkTypeLoopback(snapLen, false)
 			},
 		},
 		{
 			name: "Test PPP link BPF Filter Function",
 			l:    TypePPP,
-			wantFunc: func(snapLen int) []bpf.RawInstruction {
-				return bpfInstructionsLinkTypeRaw(snapLen)
+			wantFunc: func(snapLen int, noVlan bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction {
+				return bpfInstructionsLinkTypeRaw(snapLen, false)
 			},
 		},
 		{
 			name: "Test GRE link BPF Filter Function",
 			l:    TypeGRE,
-			wantFunc: func(snapLen int) []bpf.RawInstruction {
-				return bpfInstructionsLinkTypeRaw(snapLen)
+			wantFunc: func(snapLen int, noVlan bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction {
+				return bpfInstructionsLinkTypeRaw(snapLen, false)
 			},
 		},
 		{
 			name: "Test None link BPF Filter Function",
 			l:    TypeNone,
-			wantFunc: func(snapLen int) []bpf.RawInstruction {
-				return bpfInstructionsLinkTypeRaw(snapLen)
+			wantFunc: func(snapLen int, noVlan bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction {
+				return bpfInstructionsLinkTypeRaw(snapLen, false)
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if gotFunc := tt.l.BPFFilter(); !assert.ObjectsAreEqual(gotFunc(65536), tt.wantFunc(65536)) {
-				t.Errorf("Link.BPFFilter() = %v, want %v", gotFunc(65536), tt.wantFunc(65536))
+			if gotFunc := tt.l.BPFFilter(); !assert.ObjectsAreEqual(gotFunc(65536, false), tt.wantFunc(65536, false)) {
+				t.Errorf("Link.BPFFilter() = %v, want %v", gotFunc(65536, false), tt.wantFunc(65536, false))
 			}
 		})
 	}
