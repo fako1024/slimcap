@@ -3,7 +3,10 @@
 
 package afring
 
-import "github.com/fako1024/slimcap/link"
+import (
+	"github.com/fako1024/slimcap/link"
+	"golang.org/x/net/bpf"
+)
 
 // Option denotes a functional option for the Source
 type Option func(*Source)
@@ -27,5 +30,20 @@ func BufferSize(blockSize, nBlocks int) Option {
 	return func(s *Source) {
 		s.blockSize = pageSizeAlign(blockSize)
 		s.nBlocks = nBlocks
+	}
+}
+
+// IgnoreVLans causes the capture to drop / ignore all VLAN tagged packets on BPF level
+func IgnoreVLans(enable bool) Option {
+	return func(s *Source) {
+		s.ignoreVlan = enable
+	}
+}
+
+// ExtraBPFInstructions adds additional BPF instructions to the set of basic / existing ones
+// used on the capture
+func ExtraBPFInstructions(instr []bpf.RawInstruction) Option {
+	return func(s *Source) {
+		s.extraBPFInstr = instr
 	}
 }

@@ -10,14 +10,15 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-
-	"golang.org/x/net/bpf"
 )
 
 const (
 
 	// IPLayerOffsetEthernet denotes the ethernet header offset
 	IPLayerOffsetEthernet = 14
+
+	// IPLayerOffsetLinuxSLL2 denotes the Linux SLL2 header offset
+	IPLayerOffsetLinuxSLL2 = 20
 
 	// LayerOffsetPPPOE denotes the additional offset for PPPOE (session) packets
 	LayerOffsetPPPOE = 8
@@ -65,6 +66,9 @@ const (
 	// TypeGRE6 denotes a link of type ARPHRD_IP6GRE
 	TypeGRE6 Type = 823
 
+	// TypeLinuxSLL2 denotes a link of type LINUX_SLL2
+	TypeLinuxSLL2 Type = 276
+
 	// TypeNone denotes a link of type ARPHRD_NONE:
 	// Tunnel / anything else (confirmed: Wireguard, OpenVPN)
 	TypeNone Type = 65534
@@ -83,6 +87,8 @@ func (l Type) IPHeaderOffset() byte {
 		TypeGRE6,
 		TypeNone:
 		return 0
+	case TypeLinuxSLL2:
+		return IPLayerOffsetLinuxSLL2
 	}
 
 	// Panic if unknown
@@ -90,7 +96,7 @@ func (l Type) IPHeaderOffset() byte {
 }
 
 // BPFFilter returns the link / interface specific raw BPF instructions to filter for valid packets only
-func (l Type) BPFFilter() func(snapLen int) []bpf.RawInstruction {
+func (l Type) BPFFilter() BPFFn {
 	switch l {
 	case TypeEthernet:
 		return bpfInstructionsLinkTypeEther
@@ -100,6 +106,7 @@ func (l Type) BPFFilter() func(snapLen int) []bpf.RawInstruction {
 		TypeIP6IP6,
 		TypeGRE,
 		TypeGRE6,
+		TypeLinuxSLL2,
 		TypeNone:
 		return bpfInstructionsLinkTypeRaw
 	}
