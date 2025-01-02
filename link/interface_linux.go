@@ -15,10 +15,10 @@ import (
 )
 
 const (
-	netBasePath  = "/sys/class/net/"
-	netIndexPath = "/ifindex"
-	netTypePath  = "/type"
-	netFlagsPath = "/flags"
+	netBasePath   = "/sys/class/net/"
+	netUEventPath = "/uevent"
+	netTypePath   = "/type"
+	netFlagsPath  = "/flags"
 )
 
 // ErrIndexOutOfBounds denotes the (unlikely) case of an invalid index being outside the range of an int
@@ -66,25 +66,14 @@ func (i Interface) IsUp() (bool, error) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-func (i Interface) getIndex() (int, error) {
+func (i Interface) getIndexVLAN() (int, bool, error) {
 
-	data, err := os.ReadFile(netBasePath + i.Name + netIndexPath)
+	data, err := os.ReadFile(netBasePath + i.Name + netUEventPath)
 	if err != nil {
-		return -1, err
+		return -1, false, err
 	}
 
-	index, err := strconv.ParseInt(
-		strings.TrimSpace(string(data)), 0, 64)
-	if err != nil {
-		return -1, err
-	}
-
-	// Validate integer upper / lower bounds
-	if index > 0 && index <= math.MaxInt {
-		return int(index), nil
-	}
-
-	return -1, ErrIndexOutOfBounds
+	return extractIndexVLAN(data)
 }
 
 func (i Interface) getLinkType() (Type, error) {
@@ -105,4 +94,35 @@ func (i Interface) getLinkType() (Type, error) {
 	}
 
 	return Type(val), nil
+}
+
+func extractIndexVLAN(data []byte) (int, bool, error) {
+	var (
+		index  int64
+		isVLAN bool
+		err    error
+	)
+
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "IFINDEX=") {
+			index, err = strconv.ParseInt(
+				strings.TrimSpace(line[len("IFINDEX="):]), 0, 64)
+			if err != nil {
+				return -1, false, err
+			}
+			continue
+		}
+
+		if strings.HasPrefix(line, "DEVTYPE=") {
+			isVLAN = strings.EqualFold(strings.TrimSpace(line[len("DEVTYPE="):]), "vlan")
+		}
+	}
+
+	// Validate integer upper / lower bounds
+	if index > 0 && index <= math.MaxInt {
+		return int(index), isVLAN, nil
+	}
+
+	return -1, false, ErrIndexOutOfBounds
 }

@@ -141,35 +141,35 @@ func TestLink_BPFFilter(t *testing.T) {
 		{
 			name: "Test Ethernet link BPF Filter Function",
 			l:    TypeEthernet,
-			wantFunc: func(snapLen int, noVlan bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction {
+			wantFunc: func(snapLen int, ignoreVLANs bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction {
 				return bpfInstructionsLinkTypeEther(snapLen, false)
 			},
 		},
 		{
 			name: "Test Loopback link BPF Filter Function",
 			l:    TypeLoopback,
-			wantFunc: func(snapLen int, noVlan bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction {
+			wantFunc: func(snapLen int, ignoreVLANs bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction {
 				return bpfInstructionsLinkTypeLoopback(snapLen, false)
 			},
 		},
 		{
 			name: "Test PPP link BPF Filter Function",
 			l:    TypePPP,
-			wantFunc: func(snapLen int, noVlan bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction {
+			wantFunc: func(snapLen int, ignoreVLANs bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction {
 				return bpfInstructionsLinkTypeRaw(snapLen, false)
 			},
 		},
 		{
 			name: "Test GRE link BPF Filter Function",
 			l:    TypeGRE,
-			wantFunc: func(snapLen int, noVlan bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction {
+			wantFunc: func(snapLen int, ignoreVLANs bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction {
 				return bpfInstructionsLinkTypeRaw(snapLen, false)
 			},
 		},
 		{
 			name: "Test None link BPF Filter Function",
 			l:    TypeNone,
-			wantFunc: func(snapLen int, noVlan bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction {
+			wantFunc: func(snapLen int, ignoreVLANs bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction {
 				return bpfInstructionsLinkTypeRaw(snapLen, false)
 			},
 		},
@@ -279,6 +279,65 @@ func TestNew(t *testing.T) {
 			}
 			if !assert.ObjectsAreEqual(got, tt.want) {
 				t.Errorf("Link.New() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractIndexVLAN(t *testing.T) {
+
+	tests := []struct {
+		name       string
+		data       []byte
+		wantID     int
+		wantIsVLAN bool
+		wantErr    bool
+	}{
+		{
+			name:       "Test nil uevents file",
+			data:       nil,
+			wantID:     -1,
+			wantIsVLAN: false,
+			wantErr:    true,
+		},
+		{
+			name:       "Test empty uevents file",
+			data:       []byte{},
+			wantID:     -1,
+			wantIsVLAN: false,
+			wantErr:    true,
+		},
+		{
+			name: "Test non-VLAN link",
+			data: []byte(`INTERFACE=eth1
+IFINDEX=42`),
+			wantID:     42,
+			wantIsVLAN: false,
+			wantErr:    false,
+		},
+		{
+			name: "Test VLAN link",
+			data: []byte(`INTERFACE=eth1.100
+IFINDEX=43
+DEVTYPE=vlan`),
+			wantID:     43,
+			wantIsVLAN: true,
+			wantErr:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			linkID, isVLAN, err := extractIndexVLAN(tt.data)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("extractIndexVLAN() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !assert.Equal(t, linkID, tt.wantID) {
+				t.Errorf("extractIndexVLAN() = %v, want %v", linkID, tt.wantID)
+			}
+			if !assert.Equal(t, isVLAN, tt.wantIsVLAN) {
+				t.Errorf("extractIndexVLAN() = %v, want %v", isVLAN, tt.wantIsVLAN)
 			}
 		})
 	}

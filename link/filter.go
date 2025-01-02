@@ -33,11 +33,11 @@ const (
 
 // BPFFn denotes a generic BPF wrapper function that is used to provide link type
 // dependent filters
-type BPFFn func(snapLen int, noVlan bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction
+type BPFFn func(snapLen int, ignoreVLANs bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction
 
 // LinkTypeLoopback
 // not outbound && (ether proto 0x0800 || ether proto 0x86DD)
-var bpfInstructionsLinkTypeLoopback = func(snapLen int, noVlan bool, extraInstr ...bpf.RawInstruction) (res []bpf.RawInstruction) {
+var bpfInstructionsLinkTypeLoopback = func(snapLen int, ignoreVLANs bool, extraInstr ...bpf.RawInstruction) (res []bpf.RawInstruction) {
 	if snapLen == 0 {
 		snapLen = defaultSnapLen
 	}
@@ -67,14 +67,14 @@ var bpfInstructionsLinkTypeLoopback = func(snapLen int, noVlan bool, extraInstr 
 // ether proto 0x0800 || ether proto 0x86DD || (pppoes && (ether proto 0x0800 || ether proto 0x86DD))
 // Note: The second occurrence of "(ether proto 0x0800 || ether proto 0x86DD)" is not duplicate, it pertains
 // to the layers _after_ a PPPOE layer / header
-var bpfInstructionsLinkTypeEther = func(snapLen int, noVlan bool, extraInstr ...bpf.RawInstruction) (res []bpf.RawInstruction) {
+var bpfInstructionsLinkTypeEther = func(snapLen int, ignoreVLANs bool, extraInstr ...bpf.RawInstruction) (res []bpf.RawInstruction) {
 	if snapLen == 0 {
 		snapLen = defaultSnapLen
 	}
 	nExtra := uint8(len(extraInstr))
 
 	// Drop all VLAN-tagged packets if requested (prefix instructions)
-	if noVlan {
+	if ignoreVLANs {
 		res = []bpf.RawInstruction{
 			{Op: opLDW, Jt: 0x0, Jf: 0x0, K: regVLanT},     // Load VLAN ID register value
 			{Op: opJEQ, Jt: 0x0, Jf: 0x8 + nExtra, K: 0x0}, // Compare against 0 (not a VLAN), continue if true, return if false
@@ -107,7 +107,7 @@ var bpfInstructionsLinkTypeEther = func(snapLen int, noVlan bool, extraInstr ...
 
 // LinkTypeSLIP
 // ether proto 0x0800 || ether proto 0x86DD
-var bpfInstructionsLinkTypeRaw = func(snapLen int, noVlan bool, extraInstr ...bpf.RawInstruction) (res []bpf.RawInstruction) {
+var bpfInstructionsLinkTypeRaw = func(snapLen int, ignoreVLANs bool, extraInstr ...bpf.RawInstruction) (res []bpf.RawInstruction) {
 	if snapLen == 0 {
 		snapLen = defaultSnapLen
 	}
