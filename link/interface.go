@@ -6,7 +6,7 @@ import "path/filepath"
 type Interface struct {
 	Name   string
 	Index  int
-	isVLAN bool
+	IsVLAN bool
 	Type   Type
 }
 
@@ -16,7 +16,7 @@ func NewInterface(name string) (iface Interface, err error) {
 		Name: filepath.Clean(name),
 	}
 
-	if iface.Index, iface.isVLAN, err = iface.getIndexVLAN(); err != nil {
+	if iface.Index, iface.IsVLAN, err = iface.getIndexVLAN(); err != nil {
 		return
 	}
 	if iface.Type, err = iface.getLinkType(); err != nil {

@@ -4,7 +4,6 @@
 package socket
 
 import (
-	"errors"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -58,7 +57,7 @@ func (m *MockFileDescriptor) LastPoll() int64 {
 func (m *MockFileDescriptor) GetSocketStats() (ss TPacketStats, err error) {
 
 	if !m.FileDescriptor.IsOpen() {
-		err = errors.New("invalid socket")
+		err = ErrInvalidSocket
 		return
 	}
 
@@ -75,7 +74,7 @@ func (m *MockFileDescriptor) GetSocketStats() (ss TPacketStats, err error) {
 func (m *MockFileDescriptor) GetSocketStatsNoReset() (ss TPacketStats, err error) {
 
 	if !m.FileDescriptor.IsOpen() {
-		err = errors.New("invalid socket")
+		err = ErrInvalidSocket
 		return
 	}
 

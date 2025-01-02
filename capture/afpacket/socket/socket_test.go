@@ -28,7 +28,7 @@ func TestBasicInteraction(t *testing.T) {
 	require.False(t, sock.IsOpen())
 
 	stats, err = sock.GetSocketStats()
-	require.EqualError(t, err, "invalid socket")
+	require.ErrorIs(t, err, ErrInvalidSocket)
 	require.EqualValues(t, TPacketStats{}, stats)
 }
 

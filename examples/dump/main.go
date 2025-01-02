@@ -20,7 +20,7 @@ func main() {
 	var (
 		devName     string
 		maxPkts     int
-		ignoreVLans bool
+		ignoreVLANs bool
 	)
 
 	logger, logErr := logging.New(logging.LevelInfo, logging.EncodingPlain)
@@ -31,7 +31,7 @@ func main() {
 
 	flag.StringVar(&devName, "d", "", "device / interface to capture on")
 	flag.IntVar(&maxPkts, "n", 10, "maximum number of packets to capture")
-	flag.BoolVar(&ignoreVLans, "ignore-vlans", false, "do not capture VLAN traffic")
+	flag.BoolVar(&ignoreVLANs, "ignore-vlans", false, "do not capture VLAN traffic")
 	flag.Parse()
 	if devName == "" {
 		logger.Fatal("no interface specified (-d)")
@@ -41,7 +41,7 @@ func main() {
 		afring.CaptureLength(link.CaptureLengthFixed(64)),
 		afring.BufferSize((1<<20), 4),
 		afring.Promiscuous(false),
-		afring.IgnoreVLans(ignoreVLans),
+		afring.IgnoreVLANs(ignoreVLANs),
 	)
 	if err != nil {
 		logger.Fatalf("failed to start listener on `%s`: %s", devName, err)

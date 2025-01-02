@@ -25,10 +25,10 @@ func Promiscuous(enable bool) Option {
 	}
 }
 
-// IgnoreVLans causes the capture to drop / ignore all VLAN tagged packets on BPF level
-func IgnoreVLans(enable bool) Option {
+// ignoreVLANs causes the capture to drop / ignore all VLAN tagged packets on BPF level
+func ignoreVLANs(enable bool) Option {
 	return func(s *Source) {
-		s.ignoreVlan = enable
+		s.ignoreVLANs = enable
 	}
 }
 

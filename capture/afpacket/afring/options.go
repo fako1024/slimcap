@@ -33,10 +33,10 @@ func BufferSize(blockSize, nBlocks int) Option {
 	}
 }
 
-// IgnoreVLans causes the capture to drop / ignore all VLAN tagged packets on BPF level
-func IgnoreVLans(enable bool) Option {
+// IgnoreVLANs causes the capture to drop / ignore all VLAN tagged packets on BPF level
+func IgnoreVLANs(enable bool) Option {
 	return func(s *Source) {
-		s.ignoreVlan = enable
+		s.ignoreVLANs = enable
 	}
 }
 
