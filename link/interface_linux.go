@@ -19,10 +19,18 @@ const (
 	netUEventPath = "/uevent"
 	netTypePath   = "/type"
 	netFlagsPath  = "/flags"
+
+	netUEventIfIndexPrefix    = "IFINDEX="
+	netUEventDevTypePrefix    = "DEVTYPE="
+	netUEventDevTypeVLAN      = "vlan"
+	netUEventIfIndexPrefixLen = len(netUEventIfIndexPrefix)
+	netUEventDevTypePrefixLen = len(netUEventDevTypePrefix)
 )
 
-// ErrIndexOutOfBounds denotes the (unlikely) case of an invalid index being outside the range of an int
-var ErrIndexOutOfBounds = errors.New("interface index out of bounds")
+var (
+	// ErrIndexOutOfBounds denotes the (unlikely) case of an invalid index being outside the range of an int
+	ErrIndexOutOfBounds = errors.New("interface index out of bounds")
+)
 
 // Interfaces returns all host interfaces
 func Interfaces() ([]Interface, error) {
@@ -64,8 +72,6 @@ func (i Interface) IsUp() (bool, error) {
 	return flags&unix.IFF_UP != 0, nil
 }
 
-////////////////////////////////////////////////////////////////////////////////
-
 func (i Interface) getIndexVLAN() (int, bool, error) {
 
 	data, err := os.ReadFile(netBasePath + i.Name + netUEventPath)
@@ -96,6 +102,8 @@ func (i Interface) getLinkType() (Type, error) {
 	return Type(val), nil
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
 func extractIndexVLAN(data []byte) (int, bool, error) {
 	var (
 		index  int64
@@ -105,17 +113,18 @@ func extractIndexVLAN(data []byte) (int, bool, error) {
 
 	lines := strings.Split(string(data), "\n")
 	for _, line := range lines {
-		if strings.HasPrefix(line, "IFINDEX=") {
+		if strings.HasPrefix(line, netUEventIfIndexPrefix) {
 			index, err = strconv.ParseInt(
-				strings.TrimSpace(line[len("IFINDEX="):]), 0, 64)
+				strings.TrimSpace(line[netUEventIfIndexPrefixLen:]), 0, 64)
 			if err != nil {
 				return -1, false, err
 			}
 			continue
 		}
 
-		if strings.HasPrefix(line, "DEVTYPE=") {
-			isVLAN = strings.EqualFold(strings.TrimSpace(line[len("DEVTYPE="):]), "vlan")
+		if strings.HasPrefix(line, netUEventDevTypePrefix) {
+			isVLAN = strings.EqualFold(strings.TrimSpace(line[netUEventDevTypePrefixLen:]),
+				netUEventDevTypeVLAN)
 		}
 	}
 
