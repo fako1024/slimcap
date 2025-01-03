@@ -14,11 +14,20 @@ import (
 	"unsafe"
 
 	"github.com/fako1024/slimcap/link"
+	"golang.org/x/net/bpf"
 	"golang.org/x/sys/unix"
 )
 
 const (
 	TPacketVersion = unix.TPACKET_V3 // TPacketVersion : The TPacket header version to use
+)
+
+var (
+	// ErrInvalidSocket denotes that the underlying socket is invalid
+	ErrInvalidSocket = errors.New("invalid socket")
+
+	// ErrIgnoreVLANonVLANIface denotes an (invalid) attempt at ignoring VLAN packets on a VLAN interface
+	ErrIgnoreVLANonVLANIface = errors.New("cannot ignore VLAN packets on VLAN interface")
 )
 
 // FileDescriptor denotes a generic system level file descriptor (an int)
@@ -56,7 +65,7 @@ func New(iface *link.Link) (FileDescriptor, error) {
 func (sd FileDescriptor) GetSocketStats() (ss TPacketStats, err error) {
 
 	if sd <= 0 {
-		err = errors.New("invalid socket")
+		err = ErrInvalidSocket
 		return
 	}
 
@@ -69,10 +78,16 @@ func (sd FileDescriptor) GetSocketStats() (ss TPacketStats, err error) {
 
 // SetSocketOptions sets several socket options on the underlying file descriptor required
 // to perform AF_PACKET capture and retrieval of socket / traffic statistics
-func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, promisc bool) error {
+func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, promisc, ignoreVLANs bool, extraBPFInstr ...bpf.RawInstruction) error {
 
 	if sd <= 0 {
-		return errors.New("invalid socket")
+		return ErrInvalidSocket
+	}
+
+	// Prohibit ignoring VLAN traffic on VLAN tagged interfaces (as it does not make sense and implies conceptual non-understanding
+	// by the calling entity)
+	if iface.IsVLAN && ignoreVLANs {
+		return ErrIgnoreVLANonVLANIface
 	}
 
 	// Set TPacket version on socket to the configured version
@@ -98,7 +113,7 @@ func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, promisc
 	if bpfFilterFn := iface.Type.BPFFilter(); bpfFilterFn != nil {
 		var (
 			p               unix.SockFprog
-			bfpInstructions = bpfFilterFn(snapLen)
+			bfpInstructions = bpfFilterFn(snapLen, ignoreVLANs, extraBPFInstr...)
 		)
 		p.Len = uint16(len(bfpInstructions))
 		if p.Len != 0 {

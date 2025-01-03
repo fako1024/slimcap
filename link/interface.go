@@ -4,9 +4,10 @@ import "path/filepath"
 
 // Interface is the low-level representation of a network interface
 type Interface struct {
-	Name  string
-	Index int
-	Type  Type
+	Name   string
+	Index  int
+	IsVLAN bool
+	Type   Type
 }
 
 // NewInterface instantiates a new network interface and obtains its basic parameters
@@ -15,7 +16,7 @@ func NewInterface(name string) (iface Interface, err error) {
 		Name: filepath.Clean(name),
 	}
 
-	if iface.Index, err = iface.getIndex(); err != nil {
+	if iface.Index, iface.IsVLAN, err = iface.getIndexVLAN(); err != nil {
 		return
 	}
 	if iface.Type, err = iface.getLinkType(); err != nil {

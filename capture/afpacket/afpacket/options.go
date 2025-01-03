@@ -3,7 +3,10 @@
 
 package afpacket
 
-import "github.com/fako1024/slimcap/link"
+import (
+	"github.com/fako1024/slimcap/link"
+	"golang.org/x/net/bpf"
+)
 
 // Option denotes a functional option for the Source
 type Option func(*Source)
@@ -19,5 +22,20 @@ func CaptureLength(strategy link.CaptureLengthStrategy) Option {
 func Promiscuous(enable bool) Option {
 	return func(s *Source) {
 		s.isPromisc = enable
+	}
+}
+
+// IgnoreVLANs causes the capture to drop / ignore all VLAN tagged packets on BPF level
+func IgnoreVLANs(enable bool) Option {
+	return func(s *Source) {
+		s.ignoreVLANs = enable
+	}
+}
+
+// ExtraBPFInstructions adds additional BPF instructions to the set of basic / existing ones
+// used on the capture
+func ExtraBPFInstructions(instr []bpf.RawInstruction) Option {
+	return func(s *Source) {
+		s.extraBPFInstr = instr
 	}
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/fako1024/slimcap/capture/afpacket/socket"
 	"github.com/fako1024/slimcap/event"
 	"github.com/fako1024/slimcap/link"
+	"golang.org/x/net/bpf"
 	"golang.org/x/sys/unix"
 )
 
@@ -36,9 +37,11 @@ type Source struct {
 	snapLen            int
 	blockSize, nBlocks int
 	isPromisc          bool
+	ignoreVLANs        bool
 	link               *link.Link
 
 	ipLayerOffsetNum uint32
+	extraBPFInstr    []bpf.RawInstruction
 
 	ringBuffer
 	sync.Mutex
@@ -96,7 +99,7 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 	}
 
 	// Set socket options
-	if err := src.eventHandler.Fd.SetSocketOptions(link, src.snapLen, src.isPromisc); err != nil {
+	if err := src.eventHandler.Fd.SetSocketOptions(link, src.snapLen, src.isPromisc, src.ignoreVLANs, src.extraBPFInstr...); err != nil {
 		return nil, fmt.Errorf("failed to set AF_PACKET socket options on %s: %w", link.Name, err)
 	}
 
@@ -412,7 +415,7 @@ func (s *Source) handleEvent() error {
 func setupRingBuffer(sd socket.FileDescriptor, tPacketReq tPacketRequest) ([]byte, event.EvtFileDescriptor, error) {
 
 	if !sd.IsOpen() {
-		return nil, -1, errors.New("invalid socket")
+		return nil, -1, socket.ErrInvalidSocket
 	}
 
 	// Setup event file descriptor used for stopping / unblocking the capture (we start with that to avoid
