@@ -1,8 +1,6 @@
 package link
 
 import (
-	"fmt"
-
 	"golang.org/x/net/bpf"
 )
 
@@ -99,8 +97,6 @@ var bpfInstructionsLinkTypeEther = func(snapLen int, ignoreVLANs bool, extraInst
 		{Op: opRET, Jt: 0x0, Jf: 0x0, K: uint32(snapLen)}, // Return up to snapLen bytes of the packet
 		{Op: opRET, Jt: 0x0, Jf: 0x0, K: 0x0},             // Return (no data)
 	}...)
-
-	fmt.Println(res)
 
 	return
 }
