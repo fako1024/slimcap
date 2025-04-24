@@ -5,11 +5,11 @@ go 1.23.0
 toolchain go1.24.1
 
 require (
-	github.com/cilium/ebpf v0.17.3
+	github.com/cilium/ebpf v0.18.0
 	github.com/els0r/telemetry/logging v0.0.0-20241007081432-5f966df95bbd
 	github.com/stretchr/testify v1.10.0
-	golang.org/x/net v0.37.0
-	golang.org/x/sys v0.31.0
+	golang.org/x/net v0.39.0
+	golang.org/x/sys v0.32.0
 )
 
 require (
