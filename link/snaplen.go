@@ -13,7 +13,7 @@ var (
 
 	// CaptureLengthFixed denotes a simple fixed snaplen strategy
 	CaptureLengthFixed = func(snaplen int) CaptureLengthStrategy {
-		return func(l *Link) int {
+		return func(*Link) int {
 			return snaplen
 		}
 	}
