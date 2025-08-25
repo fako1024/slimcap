@@ -46,7 +46,11 @@ func main() {
 	if err != nil {
 		logger.Fatalf("failed to start listener on `%s`: %s", devName, err)
 	}
-	logger.Infof("Listening on interface `%s`: %+v", listener.Link().Name, listener.Link().Interface)
+	ips, err := listener.Link().IPs()
+	if err != nil {
+		logger.Warnf("failed to obtain IP addresses for interface `%s`: %s", listener.Link().Name, err)
+	}
+	logger.Infof("Listening on interface `%s`: %+v with assigned IP(s) %v", listener.Link().Name, listener.Link().Interface, ips)
 
 	logger.Infof("Reading %d packets from wire (copy operation)...", maxPkts)
 	for i := 0; i < maxPkts; i++ {

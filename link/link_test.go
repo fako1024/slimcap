@@ -46,6 +46,21 @@ func TestGetLinkType(t *testing.T) {
 	require.Equal(t, TypeLoopback, link.Type)
 }
 
+func TestGetIPs(t *testing.T) {
+	link, err := New("lo")
+	require.Nil(t, err)
+
+	ips, err := link.IPs()
+	require.Nil(t, err)
+	require.True(t, len(ips) > 0)
+	require.Equal(t, net.IPv4(127, 0, 0, 1), ips[0])
+
+	if len(ips) < 2 {
+		t.Skip("Skipping IPv6 test, no IPv6 address assigned to loopback")
+	}
+	require.Equal(t, net.IPv6loopback, ips[1])
+}
+
 func TestIpHeaderOffset(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -141,35 +156,35 @@ func TestLink_BPFFilter(t *testing.T) {
 		{
 			name: "Test Ethernet link BPF Filter Function",
 			l:    TypeEthernet,
-			wantFunc: func(snapLen int, ignoreVLANs bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction {
+			wantFunc: func(snapLen int, _ bool, _ ...bpf.RawInstruction) []bpf.RawInstruction {
 				return bpfInstructionsLinkTypeEther(snapLen, false)
 			},
 		},
 		{
 			name: "Test Loopback link BPF Filter Function",
 			l:    TypeLoopback,
-			wantFunc: func(snapLen int, ignoreVLANs bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction {
+			wantFunc: func(snapLen int, _ bool, _ ...bpf.RawInstruction) []bpf.RawInstruction {
 				return bpfInstructionsLinkTypeLoopback(snapLen, false)
 			},
 		},
 		{
 			name: "Test PPP link BPF Filter Function",
 			l:    TypePPP,
-			wantFunc: func(snapLen int, ignoreVLANs bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction {
+			wantFunc: func(snapLen int, _ bool, _ ...bpf.RawInstruction) []bpf.RawInstruction {
 				return bpfInstructionsLinkTypeRaw(snapLen, false)
 			},
 		},
 		{
 			name: "Test GRE link BPF Filter Function",
 			l:    TypeGRE,
-			wantFunc: func(snapLen int, ignoreVLANs bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction {
+			wantFunc: func(snapLen int, _ bool, _ ...bpf.RawInstruction) []bpf.RawInstruction {
 				return bpfInstructionsLinkTypeRaw(snapLen, false)
 			},
 		},
 		{
 			name: "Test None link BPF Filter Function",
 			l:    TypeNone,
-			wantFunc: func(snapLen int, ignoreVLANs bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction {
+			wantFunc: func(snapLen int, _ bool, _ ...bpf.RawInstruction) []bpf.RawInstruction {
 				return bpfInstructionsLinkTypeRaw(snapLen, false)
 			},
 		},
@@ -244,7 +259,7 @@ func TestNew(t *testing.T) {
 		{
 			name: "Test New Fail Interface not found",
 			args: args{ifName: "ethDoesNotReallyExist"},
-			mockFn: func(ifName string) (Type, error) {
+			mockFn: func(string) (Type, error) {
 				return -1, fs.ErrNotExist
 			},
 			want:    nil,
@@ -253,7 +268,7 @@ func TestNew(t *testing.T) {
 		{
 			name: "Test New Fail Interface not up",
 			args: args{ifName: "ethDoesNotReallyExist"},
-			mockFn: func(ifName string) (Type, error) {
+			mockFn: func(string) (Type, error) {
 				return TypeEthernet, nil
 			},
 			want:    nil,
@@ -262,7 +277,7 @@ func TestNew(t *testing.T) {
 		{
 			name: "Test New Fail Invalid Link Type",
 			args: args{ifName: "ethDoesNotReallyExist"},
-			mockFn: func(ifName string) (Type, error) {
+			mockFn: func(string) (Type, error) {
 				return TypeInvalid, nil
 			},
 			want:    nil,
@@ -362,6 +377,25 @@ func BenchmarkNewLink(b *testing.B) {
 	})
 }
 
+func BenchmarkGetIPs(b *testing.B) {
+	b.Run("slimcap", func(b *testing.B) {
+		iface, _ := NewInterface("lo")
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = iface.IPs()
+		}
+	})
+	b.Run("net.Interface", func(b *testing.B) {
+		iface, _ := net.InterfaceByName("lo")
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = iface.Addrs()
+		}
+	})
+}
+
 type mockInterfaces struct {
 	mockFn func() ([]Interface, error)
 }
@@ -376,4 +410,4 @@ func (m *mockInterfaces) Interfaces() ([]Interface, error) {
 	return m.mockFn()
 }
 
-var getLinkTypeF = func(ifName string) (Type, error) { return 1, nil }
+var getLinkTypeF = func(string) (Type, error) { return 1, nil }
