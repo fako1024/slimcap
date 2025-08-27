@@ -17,7 +17,7 @@ import (
 	"net"
 	"unsafe"
 
-	"github.com/fako1024/slimcap/link"
+	"github.com/fako1024/gotools/link"
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
 )
@@ -85,7 +85,8 @@ func (i IPLayer) String() (res string) {
 		sport, dport uint16
 	)
 
-	if ipLayerType == 4 {
+	switch ipLayerType {
+	case 4:
 		protocol := i[9]
 		if protocol == 6 || protocol == 17 {
 			if len(i) >= ipv4.HeaderLen+4 {
@@ -102,7 +103,7 @@ func (i IPLayer) String() (res string) {
 			dport,
 			protocol,
 		)
-	} else if ipLayerType == 6 {
+	case 6:
 		protocol := i[6]
 		if protocol == 6 || protocol == 17 {
 			if len(i) >= ipv6.HeaderLen+4 {

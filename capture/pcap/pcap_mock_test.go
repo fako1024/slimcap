@@ -10,7 +10,7 @@ import (
 
 	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/capture/afpacket/afring"
-	"github.com/fako1024/slimcap/link"
+	"github.com/fako1024/slimcap/filter"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,7 +28,7 @@ func TestMockPipe(t *testing.T) {
 
 		// Setup a mock source
 		mockSrc, err := afring.NewMockSource("mock",
-			afring.CaptureLength(link.CaptureLengthMinimalIPv4Transport),
+			afring.CaptureLength(filter.CaptureLengthMinimalIPv4Transport),
 		)
 		require.Nil(t, err)
 		errChan := mockSrc.Pipe(src, nil)

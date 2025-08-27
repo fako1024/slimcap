@@ -11,24 +11,24 @@ import (
 	"time"
 
 	"github.com/fako1024/slimcap/capture"
-	"github.com/fako1024/slimcap/link"
+	"github.com/fako1024/slimcap/filter"
 	"github.com/stretchr/testify/require"
 )
 
 func TestOptions(t *testing.T) {
 
 	t.Run("CaptureLength", func(t *testing.T) {
-		for _, captureLen := range []link.CaptureLengthStrategy{
-			link.CaptureLengthFixed(1),
-			link.CaptureLengthFixed(10),
-			link.CaptureLengthFixed(64),
-			link.CaptureLengthFixed(128),
-			link.CaptureLengthFixed(DefaultSnapLen),
-			link.CaptureLengthFixed(2 * DefaultSnapLen),
-			link.CaptureLengthMinimalIPv4Header,
-			link.CaptureLengthMinimalIPv4Transport,
-			link.CaptureLengthMinimalIPv6Header,
-			link.CaptureLengthMinimalIPv6Transport,
+		for _, captureLen := range []filter.CaptureLengthStrategy{
+			filter.CaptureLengthFixed(1),
+			filter.CaptureLengthFixed(10),
+			filter.CaptureLengthFixed(64),
+			filter.CaptureLengthFixed(128),
+			filter.CaptureLengthFixed(DefaultSnapLen),
+			filter.CaptureLengthFixed(2 * DefaultSnapLen),
+			filter.CaptureLengthMinimalIPv4Header,
+			filter.CaptureLengthMinimalIPv4Transport,
+			filter.CaptureLengthMinimalIPv6Header,
+			filter.CaptureLengthMinimalIPv6Transport,
 		} {
 			mockSrc, err := NewMockSource("mock",
 				CaptureLength(captureLen),
@@ -166,7 +166,7 @@ func TestPipe(t *testing.T) {
 
 	// Setup the original mock source
 	mockSrc, err := NewMockSource("mock",
-		CaptureLength(link.CaptureLengthMinimalIPv4Transport),
+		CaptureLength(filter.CaptureLengthMinimalIPv4Transport),
 		Promiscuous(false),
 	)
 	require.Nil(t, err)
@@ -201,7 +201,7 @@ func TestPipe(t *testing.T) {
 
 	// Setup the mock source used to pipe the first one
 	mockSrc2, err := NewMockSource("mock2",
-		CaptureLength(link.CaptureLengthMinimalIPv4Transport),
+		CaptureLength(filter.CaptureLengthMinimalIPv4Transport),
 		Promiscuous(false),
 	)
 	require.Nil(t, err)
@@ -238,7 +238,7 @@ func BenchmarkCaptureMethods(b *testing.B) {
 
 	// Setup a mock source
 	mockSrc, err := NewMockSource("mock",
-		CaptureLength(link.CaptureLengthMinimalIPv4Transport),
+		CaptureLength(filter.CaptureLengthMinimalIPv4Transport),
 		Promiscuous(false),
 	)
 	require.Nil(b, err)
@@ -306,7 +306,7 @@ func testCaptureMethods(t *testing.T, fn func(t *testing.T, src *MockSource, i, 
 
 	// Setup a mock source
 	mockSrc, err := NewMockSource("mock",
-		CaptureLength(link.CaptureLengthMinimalIPv4Transport),
+		CaptureLength(filter.CaptureLengthMinimalIPv4Transport),
 		Promiscuous(false),
 	)
 	require.Nil(t, err)

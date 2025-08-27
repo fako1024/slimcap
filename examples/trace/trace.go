@@ -10,10 +10,12 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/fako1024/gotools/link"
 	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/capture/afpacket/afpacket"
 	"github.com/fako1024/slimcap/capture/afpacket/afring"
-	"github.com/fako1024/slimcap/link"
+	"github.com/fako1024/slimcap/filter"
+
 	"golang.org/x/sys/unix"
 )
 
@@ -104,7 +106,7 @@ func (c *Capture) Run() (err error) {
 	}
 
 	// Read and log all interfaces
-	links, err := link.FindAllLinks()
+	links, err := link.HostLinks()
 	if err != nil {
 		return err
 	}
@@ -115,7 +117,7 @@ func (c *Capture) Run() (err error) {
 	// construct list of skipped interfaces
 	auxMapAvailableLinks := make(map[string]struct{}, len(links))
 	for _, link := range links {
-		auxMapAvailableLinks[strings.ToLower(link.Interface.Name)] = struct{}{}
+		auxMapAvailableLinks[strings.ToLower(link.Name)] = struct{}{}
 	}
 
 	auxMapIfaces := make(map[string]struct{}, len(c.ifaces))
@@ -143,11 +145,11 @@ func (c *Capture) Run() (err error) {
 
 	var capturing, skipped []string
 	for _, link := range links {
-		_, exists := auxMapIfaces[strings.ToLower(link.Interface.Name)]
+		_, exists := auxMapIfaces[strings.ToLower(link.Name)]
 		if !exists {
-			skipped = append(skipped, link.Interface.Name)
+			skipped = append(skipped, link.Name)
 		} else {
-			capturing = append(capturing, link.Interface.Name)
+			capturing = append(capturing, link.Name)
 		}
 	}
 	sort.Slice(skipped, func(i, j int) bool {
@@ -186,7 +188,7 @@ func (c *Capture) Run() (err error) {
 
 			var listener capture.Source
 			if c.useRingBuffer {
-				listener, err = afring.NewSourceFromLink(l, afring.CaptureLength(link.CaptureLengthMinimalIPv6Transport))
+				listener, err = afring.NewSourceFromLink(l, afring.CaptureLength(filter.CaptureLengthMinimalIPv6Transport))
 				if err != nil {
 					logger.Errorf("error starting listener (with ring buffer) on `%s`: %s", l.Name, err)
 				}

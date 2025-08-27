@@ -1,6 +1,9 @@
-package link
+package filter
 
 import (
+	"fmt"
+
+	"github.com/fako1024/gotools/link"
 	"golang.org/x/net/bpf"
 )
 
@@ -29,9 +32,29 @@ const (
 	pppTypeIPv6     = 0x57
 )
 
+// BPFFilter returns the link / interface specific raw BPF instructions to filter for valid packets only
+func BPFFilter(t link.Type) BPFFn {
+	switch t {
+	case link.TypeEthernet:
+		return bpfInstructionsLinkTypeEther
+	case link.TypeLoopback:
+		return bpfInstructionsLinkTypeLoopback
+	case link.TypePPP,
+		link.TypeIP6IP6,
+		link.TypeGRE,
+		link.TypeGRE6,
+		link.TypeLinuxSLL2,
+		link.TypeNone:
+		return bpfInstructionsLinkTypeRaw
+	}
+
+	// Panic if unknown
+	panic(fmt.Sprintf("LinkType %d not supported by slimcap (yet), please open a GitHub issue", t))
+}
+
 // BPFFn denotes a generic BPF wrapper function that is used to provide link type
 // dependent filters
-type BPFFn func(snapLen int, ignoreVLANs bool, extraInstr ...bpf.RawInstruction) []bpf.RawInstruction
+type BPFFn func(int, bool, ...bpf.RawInstruction) []bpf.RawInstruction
 
 // LinkTypeLoopback
 // not outbound && (ether proto 0x0800 || ether proto 0x86DD)
@@ -103,7 +126,7 @@ var bpfInstructionsLinkTypeEther = func(snapLen int, ignoreVLANs bool, extraInst
 
 // LinkTypeSLIP
 // ether proto 0x0800 || ether proto 0x86DD
-var bpfInstructionsLinkTypeRaw = func(snapLen int, ignoreVLANs bool, extraInstr ...bpf.RawInstruction) (res []bpf.RawInstruction) {
+var bpfInstructionsLinkTypeRaw = func(snapLen int, _ bool, extraInstr ...bpf.RawInstruction) (res []bpf.RawInstruction) {
 	if snapLen == 0 {
 		snapLen = defaultSnapLen
 	}

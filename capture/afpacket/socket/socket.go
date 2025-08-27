@@ -13,7 +13,8 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/fako1024/slimcap/link"
+	"github.com/fako1024/gotools/link"
+	"github.com/fako1024/slimcap/filter"
 	"golang.org/x/net/bpf"
 	"golang.org/x/sys/unix"
 )
@@ -110,7 +111,7 @@ func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, promisc
 	}
 
 	// Set baseline BPF filters to select only packets with a valid IP header and set the correct snaplen
-	if bpfFilterFn := iface.Type.BPFFilter(); bpfFilterFn != nil {
+	if bpfFilterFn := filter.BPFFilter(iface.Type); bpfFilterFn != nil {
 		var (
 			p               unix.SockFprog
 			bfpInstructions = bpfFilterFn(snapLen, ignoreVLANs, extraBPFInstr...)

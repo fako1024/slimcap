@@ -12,7 +12,7 @@ import (
 	"github.com/els0r/telemetry/logging"
 	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/capture/afpacket/afring"
-	"github.com/fako1024/slimcap/link"
+	"github.com/fako1024/slimcap/filter"
 )
 
 func main() {
@@ -38,7 +38,7 @@ func main() {
 	}
 
 	listener, err := afring.NewSource(devName,
-		afring.CaptureLength(link.CaptureLengthFixed(64)),
+		afring.CaptureLength(filter.CaptureLengthFixed(64)),
 		afring.BufferSize((1<<20), 4),
 		afring.Promiscuous(false),
 		afring.IgnoreVLANs(ignoreVLANs),
@@ -50,7 +50,7 @@ func main() {
 	if err != nil {
 		logger.Warnf("failed to obtain IP addresses for interface `%s`: %s", listener.Link().Name, err)
 	}
-	logger.Infof("Listening on interface `%s`: %+v with assigned IP(s) %v", listener.Link().Name, listener.Link().Interface, ips)
+	logger.Infof("Listening on interface `%s`: %+v with assigned IP(s) %v", listener.Link().Name, listener.Link(), ips)
 
 	logger.Infof("Reading %d packets from wire (copy operation)...", maxPkts)
 	for i := 0; i < maxPkts; i++ {

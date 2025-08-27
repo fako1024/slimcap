@@ -10,10 +10,10 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/fako1024/gotools/link"
 	"github.com/fako1024/slimcap/capture"
 	"github.com/fako1024/slimcap/capture/afpacket/socket"
 	"github.com/fako1024/slimcap/event"
-	"github.com/fako1024/slimcap/link"
 	"golang.org/x/sys/unix"
 )
 

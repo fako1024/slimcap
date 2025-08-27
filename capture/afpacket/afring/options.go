@@ -4,7 +4,7 @@
 package afring
 
 import (
-	"github.com/fako1024/slimcap/link"
+	"github.com/fako1024/slimcap/filter"
 	"golang.org/x/net/bpf"
 )
 
@@ -12,7 +12,7 @@ import (
 type Option func(*Source)
 
 // CaptureLength sets a snapLen / capture length (max. number of bytes captured per packet)
-func CaptureLength(strategy link.CaptureLengthStrategy) Option {
+func CaptureLength(strategy filter.CaptureLengthStrategy) Option {
 	return func(s *Source) {
 		s.snapLen = strategy(s.link)
 	}

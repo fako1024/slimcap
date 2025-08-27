@@ -17,8 +17,8 @@ import (
 	"path/filepath"
 	"unsafe"
 
+	"github.com/fako1024/gotools/link"
 	"github.com/fako1024/slimcap/capture"
-	"github.com/fako1024/slimcap/link"
 )
 
 // Source denotes a pcap file capture source
@@ -75,10 +75,8 @@ func NewSource(iface string, r io.Reader) (*Source, error) {
 
 	// Populate (fake) link information
 	obj.link = &link.Link{
-		Interface: link.Interface{
-			Name: iface,
-			Type: link.Type(obj.header.Network),
-		},
+		Name: iface,
+		Type: link.Type(obj.header.Network),
 	}
 	obj.ipLayerOffset = obj.link.Type.IPHeaderOffset()
 

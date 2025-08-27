@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/fako1024/gotools/link"
 	"github.com/fako1024/slimcap/capture"
-	"github.com/fako1024/slimcap/link"
 	"github.com/stretchr/testify/require"
 )
 
@@ -69,10 +69,8 @@ func TestReader(t *testing.T) {
 		require.Nil(t, err)
 
 		require.Equal(t, &link.Link{
-			Interface: link.Interface{
-				Name: "pcap",
-				Type: link.TypeEthernet,
-			},
+			Name: "pcap",
+			Type: link.TypeEthernet,
 		}, src.Link())
 
 		for i := 0; i < pcapTestInputNPackets; i++ {
