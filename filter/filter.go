@@ -18,18 +18,16 @@ const (
 	opAND = 0x54
 
 	regVLanT     = 0xfffff02c
-	regPktType   = 0xfffff004
 	regEtherType = 0xc
 	regPPPType   = 0x14
 
-	pktTypeOutbound = 0x4
-	etherTypeIPv4   = 0x800
-	etherTypeIPv6   = 0x86dd
-	etherTypePPPOE  = 0x8864
-	ipTypeIPv4      = 0x40
-	ipTypeIPv6      = 0x60
-	pppTypeIPv4     = 0x21
-	pppTypeIPv6     = 0x57
+	etherTypeIPv4  = 0x800
+	etherTypeIPv6  = 0x86dd
+	etherTypePPPOE = 0x8864
+	ipTypeIPv4     = 0x40
+	ipTypeIPv6     = 0x60
+	pppTypeIPv4    = 0x21
+	pppTypeIPv6    = 0x57
 )
 
 // BPFFilter returns the link / interface specific raw BPF instructions to filter for valid packets only
@@ -57,19 +55,17 @@ func BPFFilter(t link.Type) BPFFn {
 type BPFFn func(int, bool, ...bpf.RawInstruction) []bpf.RawInstruction
 
 // LinkTypeLoopback
-// not outbound && (ether proto 0x0800 || ether proto 0x86DD)
-var bpfInstructionsLinkTypeLoopback = func(snapLen int, ignoreVLANs bool, extraInstr ...bpf.RawInstruction) (res []bpf.RawInstruction) {
+// (ether proto 0x0800 || ether proto 0x86DD)
+var bpfInstructionsLinkTypeLoopback = func(snapLen int, _ bool, extraInstr ...bpf.RawInstruction) (res []bpf.RawInstruction) {
 	if snapLen == 0 {
 		snapLen = defaultSnapLen
 	}
 	nExtra := uint8(len(extraInstr))
 
 	res = append(res, []bpf.RawInstruction{
-		{Op: opLDH, Jt: 0x0, Jf: 0x0, K: regPktType},               // Load pktType
-		{Op: opJEQ, Jt: 0x4 + nExtra, Jf: 0x0, K: pktTypeOutbound}, // Compare against "OUTBOUND", return (no data) if true, continue if false
-		{Op: opLDH, Jt: 0x0, Jf: 0x0, K: regEtherType},             // Load byte 12 from the packet (ethernet type)
-		{Op: opJEQ, Jt: 0x1, Jf: 0x0, K: etherTypeIPv4},            // Compare against IPv4 header, continue further below if true
-		{Op: opJEQ, Jt: 0x0, Jf: 0x1 + nExtra, K: etherTypeIPv6},   // Compare against IPv6 header, continue further below if true, return (no data) if false
+		{Op: opLDH, Jt: 0x0, Jf: 0x0, K: regEtherType},           // Load byte 12 from the packet (ethernet type)
+		{Op: opJEQ, Jt: 0x1, Jf: 0x0, K: etherTypeIPv4},          // Compare against IPv4 header, continue further below if true
+		{Op: opJEQ, Jt: 0x0, Jf: 0x1 + nExtra, K: etherTypeIPv6}, // Compare against IPv6 header, continue further below if true, return (no data) if false
 	}...)
 
 	if nExtra > 0 {
