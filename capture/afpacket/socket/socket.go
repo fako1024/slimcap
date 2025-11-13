@@ -15,7 +15,6 @@ import (
 
 	"github.com/fako1024/gotools/link"
 	"github.com/fako1024/slimcap/filter"
-	"golang.org/x/net/bpf"
 	"golang.org/x/sys/unix"
 )
 
@@ -79,7 +78,7 @@ func (sd FileDescriptor) GetSocketStats() (ss TPacketStats, err error) {
 
 // SetSocketOptions sets several socket options on the underlying file descriptor required
 // to perform AF_PACKET capture and retrieval of socket / traffic statistics
-func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, promisc, ignoreVLANs bool, extraBPFInstr ...bpf.RawInstruction) error {
+func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, options SockerOptions) error {
 
 	if sd <= 0 {
 		return ErrInvalidSocket
@@ -87,7 +86,7 @@ func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, promisc
 
 	// Prohibit ignoring VLAN traffic on VLAN tagged interfaces (as it does not make sense and implies conceptual non-understanding
 	// by the calling entity)
-	if iface.IsVLAN && ignoreVLANs {
+	if iface.IsVLAN && options.IgnoreVLANs {
 		return ErrIgnoreVLANonVLANIface
 	}
 
@@ -97,7 +96,7 @@ func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, promisc
 	}
 
 	// If the source is in promiscuous mode, set the required flag
-	if promisc {
+	if options.Promiscuous {
 		mReq := unix.PacketMreq{
 			Ifindex: int32(iface.Index),
 			Type:    unix.PACKET_MR_PROMISC,
@@ -110,20 +109,28 @@ func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, promisc
 		}
 	}
 
-	// Set baseline BPF filters to select only packets with a valid IP header and set the correct snaplen
-	if bpfFilterFn := filter.BPFFilter(iface.Type); bpfFilterFn != nil {
-		var (
-			p               unix.SockFprog
-			bfpInstructions = bpfFilterFn(snapLen, ignoreVLANs, extraBPFInstr...)
-		)
-		p.Len = uint16(len(bfpInstructions))
-		if p.Len != 0 {
-			// #nosec: G103
-			p.Filter = (*unix.SockFilter)(unsafe.Pointer(&bfpInstructions[0]))
-			// #nosec: G103
-			if err := setsockopt(sd, unix.SOL_SOCKET, unix.SO_ATTACH_FILTER, unsafe.Pointer(&p), unix.SizeofSockFprog); err != nil {
-				return fmt.Errorf("failed to set BPF filter: %w", err)
-			}
+	// Default BPF filter (none except for snaplen / VLAN)
+	bpfFilterFn := filter.BpfInstructionsNoLimit
+
+	// If enabled (default), determine auto BPF filter based on link type
+	if !options.DisableAutoBPF {
+		if autoBpfFilterFn := filter.BPFFilter(iface.Type); autoBpfFilterFn != nil {
+			bpfFilterFn = autoBpfFilterFn
+		}
+	}
+
+	// Set baseline BPF filters and set the correct snaplen
+	var (
+		p               unix.SockFprog
+		bfpInstructions = bpfFilterFn(snapLen, options.IgnoreVLANs, options.ExtraBPFInstr...)
+	)
+	p.Len = uint16(len(bfpInstructions))
+	if p.Len != 0 {
+		// #nosec: G103
+		p.Filter = (*unix.SockFilter)(unsafe.Pointer(&bfpInstructions[0]))
+		// #nosec: G103
+		if err := setsockopt(sd, unix.SOL_SOCKET, unix.SO_ATTACH_FILTER, unsafe.Pointer(&p), unix.SizeofSockFprog); err != nil {
+			return fmt.Errorf("failed to set BPF filter: %w", err)
 		}
 	}
 

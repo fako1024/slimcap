@@ -38,6 +38,7 @@ type Source struct {
 	blockSize, nBlocks int
 	isPromisc          bool
 	ignoreVLANs        bool
+	disableAutoBPF     bool
 	link               *link.Link
 
 	ipLayerOffsetNum uint32
@@ -99,7 +100,12 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 	}
 
 	// Set socket options
-	if err := src.eventHandler.Fd.SetSocketOptions(link, src.snapLen, src.isPromisc, src.ignoreVLANs, src.extraBPFInstr...); err != nil {
+	if err := src.eventHandler.Fd.SetSocketOptions(link, src.snapLen, socket.SockerOptions{
+		Promiscuous:    src.isPromisc,
+		IgnoreVLANs:    src.ignoreVLANs,
+		DisableAutoBPF: src.disableAutoBPF,
+		ExtraBPFInstr:  src.extraBPFInstr,
+	}); err != nil {
 		return nil, fmt.Errorf("failed to set AF_PACKET socket options on %s: %w", link.Name, err)
 	}
 
