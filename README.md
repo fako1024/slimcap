@@ -17,7 +17,7 @@ This package provides a simple yet powerful interface to perform network packet 
 
 > [!WARNING]
 > **This package does *not* perform any payload / network layer decoding**\
-> `slimcap` is aimed at doing the heavy lifting of extracting up to the IP layer of network packets with the utmost performance possible (and hence limits itself to packets which actually _have_ an IP layer). All further parsing / processing must
+> `slimcap` is aimed at doing the heavy lifting of extracting up to the IP layer of network packets with the utmost performance possible (and hence by default limits itself to packets which actually _have_ an IP layer). All further parsing / processing must
 > be done by the caller.
 
 ## Installation
@@ -121,6 +121,18 @@ BenchmarkCaptureMethods/NextIPPacket            179753388	  64.18 ns/op	48 B/op	
 BenchmarkCaptureMethods/NextIPPacketInPlace     381187490	  28.33 ns/op	 0 B/op	  0 allocs/op
 BenchmarkCaptureMethods/NextIPPacketZeroCopy    567278034	  19.67 ns/op	 0 B/op	  0 allocs/op
 BenchmarkCaptureMethods/NextPacketFn            559334258	  20.44 ns/op	 0 B/op	  0 allocs/op
+```
+
+## Capturing raw packets
+By default `slimcap` automatically defines [BPF](https://docs.kernel.org/bpf/) filters based on link type that limit captured packets to those containing an IP layer only. This is done in order to maximize performance and minimize CPU / memory usage. If raw packet capture is desired (i.e. capturing all packets regardless of their payload), this can be achieved by disabling automatic BPF filter generation when creating a new capture source, e.g.:
+```go
+listener, err := afring.NewSource(devName,
+	afring.CaptureLength(filter.CaptureLengthFixed(64)),
+	afring.BufferSize((1<<20), 4),
+	afring.Promiscuous(false),
+	afring.IgnoreVLANs(ignoreVLANs),
+	afring.DisableAutoBPF(),                   // Disable automatic BPF filter generation
+)
 ```
 
 ## Capture Mocks / Testing
