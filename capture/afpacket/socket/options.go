@@ -2,8 +2,8 @@ package socket
 
 import "golang.org/x/net/bpf"
 
-// SockerOptions denotes the available socket options
-type SockerOptions struct {
+// SocketOptions denotes the available socket options
+type SocketOptions struct {
 
 	// Promiscuous mode
 	Promiscuous bool

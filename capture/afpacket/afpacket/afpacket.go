@@ -96,7 +96,7 @@ func NewSourceFromLink(link *link.Link, options ...Option) (*Source, error) {
 	}
 
 	// Set socket options
-	if err := src.eventHandler.Fd.SetSocketOptions(link, src.snapLen, socket.SockerOptions{
+	if err := src.eventHandler.Fd.SetSocketOptions(link, src.snapLen, socket.SocketOptions{
 		Promiscuous:    src.isPromisc,
 		IgnoreVLANs:    src.ignoreVLANs,
 		DisableAutoBPF: src.disableAutoBPF,

@@ -78,7 +78,7 @@ func (sd FileDescriptor) GetSocketStats() (ss TPacketStats, err error) {
 
 // SetSocketOptions sets several socket options on the underlying file descriptor required
 // to perform AF_PACKET capture and retrieval of socket / traffic statistics
-func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, options SockerOptions) error {
+func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, options SocketOptions) error {
 
 	if sd <= 0 {
 		return ErrInvalidSocket
