@@ -54,6 +54,33 @@ func BPFFilter(t link.Type) BPFFn {
 // dependent filters
 type BPFFn func(int, bool, ...bpf.RawInstruction) []bpf.RawInstruction
 
+// BpfInstructionsNoLimit provides a minimal BPF filter (no limitation except for snaplen, VLAN)
+var BpfInstructionsNoLimit = func(snapLen int, ignoreVLANs bool, extraInstr ...bpf.RawInstruction) (res []bpf.RawInstruction) {
+	if snapLen == 0 {
+		snapLen = defaultSnapLen
+	}
+	nExtra := uint8(len(extraInstr))
+
+	// Drop all VLAN-tagged packets if requested (prefix instructions)
+	if ignoreVLANs {
+		res = []bpf.RawInstruction{
+			{Op: opLDW, Jt: 0x0, Jf: 0x0, K: regVLanT},     // Load VLAN ID register value
+			{Op: opJEQ, Jt: 0x0, Jf: 0x1 + nExtra, K: 0x0}, // Compare against 0 (not a VLAN), continue if true, return if false
+		}
+	}
+
+	if nExtra > 0 {
+		res = append(res, extraInstr...) // Append any optional / extra instructions verbatim
+	}
+
+	res = append(res, []bpf.RawInstruction{
+		{Op: opRET, Jt: 0x0, Jf: 0x0, K: uint32(snapLen)}, // Return up to snapLen bytes of the packet
+		{Op: opRET, Jt: 0x0, Jf: 0x0, K: 0x0},             // Return (no data)
+	}...)
+
+	return
+}
+
 // LinkTypeLoopback
 // (ether proto 0x0800 || ether proto 0x86DD)
 var bpfInstructionsLinkTypeLoopback = func(snapLen int, _ bool, extraInstr ...bpf.RawInstruction) (res []bpf.RawInstruction) {

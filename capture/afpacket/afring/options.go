@@ -40,6 +40,13 @@ func IgnoreVLANs(enable bool) Option {
 	}
 }
 
+// DisableAutoBPF disables the automatic BPF filter setup based on link type
+func DisableAutoBPF() Option {
+	return func(s *Source) {
+		s.disableAutoBPF = true
+	}
+}
+
 // ExtraBPFInstructions adds additional BPF instructions to the set of basic / existing ones
 // used on the capture
 func ExtraBPFInstructions(instr []bpf.RawInstruction) Option {
