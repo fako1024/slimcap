@@ -18,6 +18,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+var setPacketMembership = unix.SetsockoptPacketMreq
+
 const (
 	TPacketVersion = unix.TPACKET_V3 // TPacketVersion : The TPacket header version to use
 )
@@ -97,14 +99,7 @@ func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, options
 
 	// If the source is in promiscuous mode, set the required flag
 	if options.Promiscuous {
-		mReq := unix.PacketMreq{
-			Ifindex: int32(iface.Index),
-			Type:    unix.PACKET_MR_PROMISC,
-		}
-		// #nosec: G103
-		reqLen := unsafe.Sizeof(mReq)
-		// #nosec: G103
-		if err := setsockopt(sd, unix.SOL_SOCKET, unix.PACKET_ADD_MEMBERSHIP, unsafe.Pointer(&mReq), uintptr(unsafe.Pointer(&reqLen))); err != nil {
+		if err := setPromiscuousMode(sd, iface); err != nil {
 			return fmt.Errorf("failed to set promiscuous mode: %w", err)
 		}
 	}
@@ -135,6 +130,15 @@ func (sd FileDescriptor) SetSocketOptions(iface *link.Link, snapLen int, options
 	}
 
 	return nil
+}
+
+func setPromiscuousMode(sd FileDescriptor, iface *link.Link) error {
+	mReq := unix.PacketMreq{
+		Ifindex: int32(iface.Index),
+		Type:    unix.PACKET_MR_PROMISC,
+	}
+
+	return setPacketMembership(int(sd), unix.SOL_PACKET, unix.PACKET_ADD_MEMBERSHIP, &mReq)
 }
 
 // SetupRingBuffer peforms a call via setsockopt() to prepare a mmmap'ed ring buffer

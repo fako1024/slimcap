@@ -4,10 +4,13 @@
 package socket
 
 import (
+	"errors"
 	"sync"
 	"testing"
 
+	"github.com/fako1024/gotools/link"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 const nPolls = 1000000
@@ -64,4 +67,41 @@ func TestPacketCounter(t *testing.T) {
 	wg.Wait()
 
 	require.Nil(t, sock.Close())
+}
+
+func TestSetPromiscuousModeUsesPacketSocketOptions(t *testing.T) {
+	origSetPacketMembership := setPacketMembership
+	t.Cleanup(func() {
+		setPacketMembership = origSetPacketMembership
+	})
+
+	var called bool
+	setPacketMembership = func(fd, level, opt int, mreq *unix.PacketMreq) error {
+		called = true
+		require.Equal(t, 1234, fd)
+		require.Equal(t, unix.SOL_PACKET, level)
+		require.Equal(t, unix.PACKET_ADD_MEMBERSHIP, opt)
+		require.EqualValues(t, 42, mreq.Ifindex)
+		require.EqualValues(t, unix.PACKET_MR_PROMISC, mreq.Type)
+		return nil
+	}
+
+	err := setPromiscuousMode(FileDescriptor(1234), &link.Link{Index: 42})
+	require.Nil(t, err)
+	require.True(t, called)
+}
+
+func TestSetPromiscuousModePropagatesError(t *testing.T) {
+	origSetPacketMembership := setPacketMembership
+	t.Cleanup(func() {
+		setPacketMembership = origSetPacketMembership
+	})
+
+	expectedErr := errors.New("membership failure")
+	setPacketMembership = func(fd, level, opt int, mreq *unix.PacketMreq) error {
+		return expectedErr
+	}
+
+	err := setPromiscuousMode(FileDescriptor(1234), &link.Link{Index: 42})
+	require.ErrorIs(t, err, expectedErr)
 }
