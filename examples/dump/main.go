@@ -23,11 +23,12 @@ func main() {
 		ignoreVLANs bool
 	)
 
-	logger, logErr := logging.New(logging.LevelInfo, logging.EncodingPlain)
+	logger, logShutdownFn, logErr := logging.New(logging.LevelInfo, logging.EncodingPlain)
 	if logErr != nil {
 		fmt.Fprintf(os.Stderr, "failed to instantiate CLI logger: %v\n", logErr)
 		os.Exit(1)
 	}
+	defer logShutdownFn()
 
 	flag.StringVar(&devName, "d", "", "device / interface to capture on")
 	flag.IntVar(&maxPkts, "n", 10, "maximum number of packets to capture")

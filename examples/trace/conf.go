@@ -2,11 +2,7 @@ package main
 
 import (
 	"flag"
-	"fmt"
-	"os"
 	"strings"
-
-	"github.com/els0r/telemetry/logging"
 )
 
 // Definitions for command line option names
@@ -62,13 +58,6 @@ func ParseConfig() (cfg Config) {
 	flag.Parse()
 	cfg.Ifaces = parseList(rawIfaces)
 	cfg.SkipIfaces = parseList(rawSkipIfaces)
-
-	var logErr error
-	logger, logErr = logging.New(logging.LevelFromString(cfg.LogLevel), logging.EncodingPlain)
-	if logErr != nil {
-		fmt.Fprintf(os.Stderr, "failed to instantiate CLI logger: %v\n", logErr)
-		os.Exit(1)
-	}
 
 	return
 }

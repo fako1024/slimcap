@@ -9,8 +9,6 @@ import (
 	"github.com/els0r/telemetry/logging"
 )
 
-var logger *logging.L
-
 func main() {
 
 	cfg := ParseConfig()
@@ -25,6 +23,6 @@ func main() {
 		WithCPUProfiling(cfg.CPUProfileOutput).
 		WithMemProfiling(cfg.MemProfileOutput).
 		Run(); err != nil {
-		logger.Fatalf("critical error during capture: %s", err)
+		logging.Logger().Fatalf("critical error during capture: %s", err)
 	}
 }
