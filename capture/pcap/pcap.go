@@ -21,6 +21,8 @@ import (
 	"github.com/fako1024/slimcap/capture"
 )
 
+const maxSnapLen uint32 = 16 << 20
+
 // Source denotes a pcap file capture source
 type Source struct {
 	reader     *bufio.Reader
@@ -71,6 +73,9 @@ func NewSource(iface string, r io.Reader) (*Source, error) {
 	// After swapping, the header magic must be valid
 	if obj.header.MagicNumber != MagicNativeEndianess {
 		return nil, fmt.Errorf("invalid pcap header magic: %x", obj.header.MagicNumber)
+	}
+	if obj.header.Snaplen == 0 || obj.header.Snaplen > maxSnapLen {
+		return nil, fmt.Errorf("invalid pcap header snaplen: %d (max %d)", obj.header.Snaplen, maxSnapLen)
 	}
 
 	// Populate (fake) link information
@@ -231,14 +236,24 @@ func (s *Source) nextPacket() (pktHeader PacketHeader, err error) {
 	if s.swapEndianess {
 		pktHeader = pktHeader.SwapEndianess()
 	}
-
-	if err = s.nextPacketData(int(pktHeader.CaptureLen)); err == nil {
-		s.nPackets++
+	if pktHeader.CaptureLen < 0 {
+		err = fmt.Errorf("invalid packet capture length: %d", pktHeader.CaptureLen)
+		return
 	}
 
-	// If a callback function was provided, execute it
-	if s.packetAddCallbackFn != nil {
-		s.packetAddCallbackFn(s.buf, uint32(pktHeader.OriginalLen), capture.PacketUnknown, s.ipLayerOffset)
+	captureLen := uint32(pktHeader.CaptureLen)
+	if captureLen > s.header.Snaplen {
+		err = fmt.Errorf("invalid packet capture length: %d exceeds snaplen %d", pktHeader.CaptureLen, s.header.Snaplen)
+		return
+	}
+
+	if err = s.nextPacketData(int(captureLen)); err == nil {
+		s.nPackets++
+
+		// If a callback function was provided, execute it
+		if s.packetAddCallbackFn != nil {
+			s.packetAddCallbackFn(s.buf, uint32(pktHeader.OriginalLen), capture.PacketUnknown, s.ipLayerOffset)
+		}
 	}
 
 	return
