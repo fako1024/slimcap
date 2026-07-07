@@ -6,8 +6,8 @@ require (
 	github.com/els0r/telemetry/logging v0.0.0-20260406010724-0c813ed6284d
 	github.com/fako1024/gotools/link v0.0.0-20260108133916-d42cb4e89f05
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/net v0.53.0
-	golang.org/x/sys v0.43.0
+	golang.org/x/net v0.55.0
+	golang.org/x/sys v0.45.0
 )
 
 require (
